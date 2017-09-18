@@ -461,8 +461,12 @@ class RESTProcessor(object):
 
     def __getSelfKey(self, keys):
         key = keys.get(self.__bindEntityName, None)
+        key = self.parseKey(key)
         if not key:
             raise InternalException('Framework error, key is not filled')
+        return key
+
+    def parseKey(self, key):
         return key
 
     def __getSelfKeyValue(self, keys, column):
