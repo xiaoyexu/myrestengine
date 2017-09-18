@@ -24,13 +24,18 @@ user:
   ...
 ```
 
-* `_expand` define the allowed navigation entity, allow navigate from user entity to roles and orgs entity set e.g.
+* `expand` define the allowed navigation entity, allow navigate from user entity to roles and orgs entity set e.g.
 ```
 user:
   ...
-  _expand:
+  expand:
   - roles
   - orgs
+```
+In this case, implement ``getListByKey`` method in roles or orgs processor, e.g.
+```    
+def getListByKey(self, keys):
+        return Roles.objects.filter(user__id=keys['user']['id'])
 ```
 
 ## Processor

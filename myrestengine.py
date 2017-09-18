@@ -88,7 +88,7 @@ class MetadataUtil(object):
 
     def getExpandFieldDef(self, entityName):
         entityDef = self.getEntityDef(entityName)
-        expandList = entityDef.get('_expand', [])
+        expandList = entityDef.get('expand', [])
         return expandList
 
     def getEntityTypeOfName(self, name):
