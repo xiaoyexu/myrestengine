@@ -381,7 +381,7 @@ class RESTEngine(object):
                     keyPair = key.split('=')
                     if len(keyPair) < 2:
                         raise ParameterErrorException("Mutiple key given but doesn't contains = ")
-                    key, value = keyPair[0], keyPair[1]
+                    key, value = keyPair[0].strip(), keyPair[1].strip()
                     keyDef = self.__metadataUtil.getKeyFieldDef(entityName, key)
                     if not keyDef:
                         raise ParameterErrorException('Wrong key')
@@ -461,13 +461,12 @@ class RESTProcessor(object):
 
     def __getSelfKey(self, keys):
         key = keys.get(self.__bindEntityName, None)
-        key = self.parseKey(key)
         if not key:
             raise InternalException('Framework error, key is not filled')
         return key
 
-    def parseKey(self, key):
-        return key
+    def getMappedFieldName(self, fieldName):
+        return fieldName
 
     def __getSelfKeyValue(self, keys, column):
         return self.__getSelfKey(keys).get(column, None)
@@ -622,6 +621,8 @@ class RESTProcessor(object):
         key = self.__getSelfKey(keys)
         q = Q()
         for k, v in key.items():
+            # Chance to get real db model field name
+            k = self.getMappedFieldName(k)
             q.add(self.buildQobject(k, '=', v), Q.AND)
         baseQ = self.getBaseQuery()
         if baseQ:
@@ -668,6 +669,8 @@ class RESTProcessor(object):
             return None
         if not (opt == 'and' or opt == 'or'):
             field = conditions.get('field', None)
+            # Chance to get db model field name
+            field = self.getMappedFieldName(field)
             value = conditions.get('value', None)
             return self.buildQobject(field, opt, value)
         else:
