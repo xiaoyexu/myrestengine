@@ -15,6 +15,7 @@ class UserContext(object):
         self.csrfTokenInfo = ''
         self.languageKey = ''
 
+
 class MetadataException(Exception):
     pass
 
@@ -314,10 +315,10 @@ class RESTEngine(object):
     def __convertResponse(self, result, content_types):
         response = HttpResponse()
         if self.DEFAULT_CONTENT_TYPE in content_types or self.CONTENT_TYPE_TEXT in content_types or self.CONTENT_TYPE_ANY in content_types:
-            response.content = json.dumps(result)
+            response.content = json.dumps(result) if result else ''
             response['Content-Type'] = self.DEFAULT_CONTENT_TYPE
         elif self.CONTENT_TYPE_XML in content_types:
-            response.content = tostring(XmlConvert.json_to_xml('xml', result))
+            response.content = tostring(XmlConvert.json_to_xml('xml', result)) if result else ''
             response['Content-Type'] = self.CONTENT_TYPE_XML
         else:
             response.content = 'Required content type %s not supported' % content_types
@@ -415,6 +416,15 @@ class RESTEngine(object):
         http_response_header = {}
         requestContentTypes = request.META.get('CONTENT_TYPE', RESTEngine.DEFAULT_CONTENT_TYPE).split(',')
         requiredContentTypes = request.META.get('HTTP_ACCEPT', RESTEngine.DEFAULT_CONTENT_TYPE).split(',')
+        if path == '' or path is None:
+            availableEntities = []
+            for k, v in self.getMetadataUtil().metadata.get('sets', None).items():
+                availableEntities.append(k)
+            response = self.__convertResponse(availableEntities, requiredContentTypes)
+            return response
+        elif path == '_metadata':
+            response = self.__convertResponse(self.getMetadataUtil().metadata, requiredContentTypes)
+            return response
         method = request.method
         self.__checkMethodHttpContentTypeAndAccept(method, requestContentTypes, requiredContentTypes)
         if method == 'GET' or method == 'HEAD':
@@ -435,7 +445,6 @@ class RESTEngine(object):
         response.status_code = http_response_status
         for k, v in http_response_header.items():
             response[k] = v
-        response['Access-Control-Allow-Origin'] = '*'
         return response
 
 
@@ -727,7 +736,6 @@ class RESTProcessor(object):
         return result
 
 
-
 def requireProcess(need_login=True, need_decrypt=True):
     def decorate(view_func):
         def errorResponse(status, message):
@@ -741,8 +749,8 @@ def requireProcess(need_login=True, need_decrypt=True):
             request = args[0]
             if request.method == 'OPTIONS':
                 response = HttpResponse()
-                response['Access-Control-Allow-Origin'] = '*'
-                response['Access-Control-Allow-Headers'] = 'Content-Type'
+                # response['Access-Control-Allow-Origin'] = '*'
+                # response['Access-Control-Allow-Headers'] = 'Content-Type'
                 return response
             requestContentTypes = request.META.get('CONTENT_TYPE', RESTEngine.DEFAULT_CONTENT_TYPE).split(',')
             body = request.body
