@@ -144,6 +144,13 @@ For multiple key field, use pattern entity(&lt;keyname&gt;=&lt;keyvalue&gt;), e.
 /api/entity(name="XYZ",age=18, grade=5)
 ```
 
+Or pure values without keyname, key order in metadata file will be used to map each field.
+
+```
+/api/entity("XYZ",18)
+/api/entity("XYZ",18,5)
+```
+
 
 Reserved url parameters are `_query`, `_order`, `_skip`, `_top`, `_count`
 

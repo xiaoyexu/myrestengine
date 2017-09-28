@@ -7,6 +7,7 @@ from django.db.models import Q
 from django.db.models.query import QuerySet
 from django.core.exceptions import *
 from django.core.paginator import Paginator, PageNotAnInteger, EmptyPage
+from functools import reduce
 import random, re, pickle, yaml, base64, json, time, datetime
 
 
@@ -119,11 +120,11 @@ class MetadataUtil(object):
     def checkFieldValueByType(self, value, type):
         if type == 'int':
             if not re.compile("^[\d]*$").match(value):
-                raise MetadataException("Value doesn't match int type")
+                raise MetadataException("Value %s doesn't match int type" % value)
             return int(value)
         elif type == 'string':
             if len(value) < 2:
-                raise MetadataException("Value must contains \" or \' and length > 2")
+                raise MetadataException("Value %s must contains \" or \' and length > 2" % value)
             if (value[0] == '"' and value[-1] == '"') or (value[0] == "'" and value[-1] == "'"):
                 return value[1:-1]
             else:
@@ -351,6 +352,17 @@ class RESTEngine(object):
         }
         return params
 
+    def __checkKeyPattern(self, keysArray):
+        if self.__checkArrayPattern(keysArray, lambda key: len(key.split('=')) == 2):
+            return 1
+        elif self.__checkArrayPattern(keysArray, lambda key: len(key.split('=')) == 1):
+            return 2
+        else:
+            raise ParameterErrorException("Either use key=value or 'value', but not mixed")
+
+    def __checkArrayPattern(self, pArray, pFunc):
+        return reduce(lambda x, y: x << 1 | y, list(map(lambda x: pFunc(x), pArray))) == 2 ** len(pArray) - 1
+
     def __getEntityInfo(self, urlPath):
         regItem = re.match(r'(\w*)(\(.*\))?', urlPath)
         if not regItem:
@@ -374,22 +386,40 @@ class RESTEngine(object):
                     raise ParameterErrorException('Number of key field mismatch')
                 value = self.__metadataUtil.checkFieldValueByType(keysArray[0], keyDefs[0]['type'])
                 if not value:
-                    raise ParameterErrorException('Wrong key value')
+                    raise ParameterErrorException('Wrong key value %s' % value)
                 keys[entityName] = {keyDefs[0]['name']: value}
             else:
                 keyPairs = {}
-                for key in keysArray:
-                    keyPair = key.split('=')
-                    if len(keyPair) < 2:
-                        raise ParameterErrorException("Mutiple key given but doesn't contains = ")
-                    key, value = keyPair[0].strip(), keyPair[1].strip()
-                    keyDef = self.__metadataUtil.getKeyFieldDef(entityName, key)
-                    if not keyDef:
-                        raise ParameterErrorException('Wrong key')
-                    value = self.__metadataUtil.checkFieldValueByType(value, keyDef['type'])
-                    if not value:
-                        raise ParameterErrorException('Wrong key value')
-                    keyPairs[keyDef['name']] = value
+                # Validate key pairs pattern
+                # Pattern 1 entity(key1='value', key2='value2')
+                # Pattern 2 entity('value','value2)
+                pattern = self.__checkKeyPattern(keysArray)
+                if pattern == 1:
+
+                    def mapKey(x):
+                        keyPair = x.split('=')
+                        key, value = keyPair[0].strip(), keyPair[1].strip()
+                        keyDef = self.__metadataUtil.getKeyFieldDef(entityName, key)
+                        if not keyDef:
+                            raise ParameterErrorException('Wrong key %s' % key)
+                        value = self.__metadataUtil.checkFieldValueByType(value, keyDef['type'])
+                        if not value:
+                            raise ParameterErrorException('Wrong key value %s' % value)
+                        return {keyDef['name']: value}
+
+                    keyPairs = reduce(lambda x, y: x.update(y) or x, list(map(mapKey, keysArray)))
+                elif pattern == 2:
+                    keysDef = self.__metadataUtil.getKeyFieldDef(entityName)
+
+                    def mapKey(x, y):
+                        x = x.strip()
+                        x = self.__metadataUtil.checkFieldValueByType(x, y['type'])
+                        if not x:
+                            raise ParameterErrorException('Wrong key value')
+                        return {y['name']: x}
+
+                    keyPairs = reduce(lambda x, y: x.update(y) or x, list(map(mapKey, keysArray, keysDef)))
+
                 keys[entityName] = keyPairs
             queryType = "single"
         else:
