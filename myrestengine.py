@@ -10,6 +10,7 @@ from django.core.paginator import Paginator, PageNotAnInteger, EmptyPage
 from functools import reduce
 import random, re, pickle, yaml, base64, json, time, datetime
 
+VERSION = '20171009'
 
 class UserContext(object):
     def __init__(self):
@@ -90,8 +91,16 @@ class MetadataUtil(object):
 
     def getExpandFieldDef(self, entityName):
         entityDef = self.getEntityDef(entityName)
-        expandList = entityDef.get('expand', [])
+        expandList = [item['name'] for item in entityDef.get('expand', [])]
         return expandList
+
+    def getExpandFieldSetType(self, entityName, expandName):
+        try:
+            for item in self.metadata[entityName]['expand']:
+                if item['name'] == expandName:
+                    return item['type']
+        except Exception as e:
+            return None
 
     def getEntityTypeOfName(self, name):
         if name in self.metadata:
@@ -475,6 +484,8 @@ class RESTEngine(object):
         response.status_code = http_response_status
         for k, v in http_response_header.items():
             response[k] = v
+        response['Access-Control-Allow-Origin'] = '*'
+        response['Access-Control-Allow-Headers'] = 'Content-Type'
         return response
 
 
@@ -516,10 +527,10 @@ class RESTProcessor(object):
                 raise ParameterErrorException('Expand item %s not valid' % expandItem)
         return True
 
-    def __expandItemProcess(self, request, expandItem, parentItemkeys):
-        processor = self.__engine.getProcessorByUrlName(expandItem)
-        qt = self.__engine.getMetadataUtil().getEntityTypeOfName(expandItem)
-        result = processor.handle_http_request(request, {}, parentItemkeys, {'queryType': qt})
+    def __expandItemProcess(self, request, expandItem, expandItemSet, parentItemkeys):
+        processor = self.__engine.getProcessorByUrlName(expandItemSet)
+        qt = self.__engine.getMetadataUtil().getEntityTypeOfName(expandItemSet)
+        result = processor.handle_http_request(request, {'expandName': expandItem}, parentItemkeys, {'queryType': qt})
         return result
 
     def __formatDateTime(self, dt, format="%Y-%m-%d %H:%M:%S"):
@@ -556,7 +567,8 @@ class RESTProcessor(object):
                 result = self.getSingle(request, keys)
                 # Add expand item
                 for expandItem in expandArray:
-                    result[expandItem] = self.__expandItemProcess(request, expandItem, keys)
+                    expandItemSet = self.__engine.getMetadataUtil().getExpandFieldSetType(entityName, expandItem)
+                    result[expandItem] = self.__expandItemProcess(request, expandItem, expandItemSet, keys)
             elif queryType == 'list':
                 if query:
                     try:
@@ -572,7 +584,10 @@ class RESTProcessor(object):
                     for resultRecord in list(result):
                         expandKeys = self.__engine.getKeysFromRecord(entityName, resultRecord)
                         for expandItem in expandArray:
-                            resultRecord[expandItem] = self.__expandItemProcess(request, expandItem, expandKeys)
+                            expandItemSet = self.__engine.getMetadataUtil().getExpandFieldSetType(entityName,
+                                                                                                  expandItem)
+                            resultRecord[expandItem] = self.__expandItemProcess(request, expandItem, expandItemSet,
+                                                                                expandKeys)
         elif request.method == 'HEAD':
             result = self.head(request)
         elif request.method == 'POST':
@@ -601,7 +616,7 @@ class RESTProcessor(object):
     def getBaseDjangoModel(self):
         return self.__baseDjangoModel
 
-    def getListByKey(self, keys):
+    def getListByKey(self, keys, expandName=None):
         return None
 
     def getList(self, request, keys, **kwargs):
@@ -620,7 +635,8 @@ class RESTProcessor(object):
                 query.add(q, Q.AND)
         djangoresult = None
         if keys:
-            djangoresult = self.getListByKey(keys)
+            expandName = kwargs.get('expandName', None)
+            djangoresult = self.getListByKey(keys, expandName)
             if djangoresult and type(djangoresult) is not QuerySet:
                 raise InternalException('getListByKey result must be QuerySet')
         order = kwargs.get('order', [])
@@ -779,8 +795,8 @@ def requireProcess(need_login=True, need_decrypt=True):
             request = args[0]
             if request.method == 'OPTIONS':
                 response = HttpResponse()
-                # response['Access-Control-Allow-Origin'] = '*'
-                # response['Access-Control-Allow-Headers'] = 'Content-Type'
+                response['Access-Control-Allow-Origin'] = '*'
+                response['Access-Control-Allow-Headers'] = 'Content-Type'
                 return response
             requestContentTypes = request.META.get('CONTENT_TYPE', RESTEngine.DEFAULT_CONTENT_TYPE).split(',')
             body = request.body
