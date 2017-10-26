@@ -83,17 +83,33 @@ def getListByKey(self, keys):
 * Other methods for post, put, delete
 
  1. convertData returns json result of a django model object, phrase text can be retrieved if language is given. E.g.
-```
-def convertData(self, model, language=None):
+
+    ```
+    def convertData(self, model, language=None):
         record = {}
         record['id'] = model.id
         ...
         return record
-```
+    ```
 
- 2. Method post defines logic when request method is POST, e.g.
-```
-def post(self, request):
+    You can also provide a model to json field mapping by overwrite method getPopulateFieldMapping, e.g.
+
+    ```
+    def getPopulateFieldMapping(self):
+       return [
+           'id',
+           ('bookId', lambda m: m.book.id),
+           ('bookName', lambda m: m.book.name),
+           'category'
+       ]
+   ```
+
+ 2. Method post defines logic when request method is POST
+
+    One way is to overwrite post(self, request) method, e.g.
+
+    ```
+    def post(self, request):
         jsonBody = request.jsonBody
         # Get fields from jsonBody and create data
         firstName = jsonBody.get('firstName', None)
@@ -101,11 +117,44 @@ def post(self, request):
         user.firstName = firstName
         user.save()
         return self.convertData(user)
- ```
+    ```
+
+      Another option is to overwrite getNewModel, e.g.
+
+    ```
+    def getNewModel(self):
+        return BookComment()
+    ```
+
+    And overwrite postValidation for validation, e.g.
+
+    ```
+    def postValidation(self, json):
+        bookId = json.get('bookId', None)
+        userId = json.get('userId', None)
+        text = json.get('text', None)
+        if not bookId or not userId or not text:
+            raise ParameterErrorException('No bookId userId or text given')
+
+    ```
+
+    And define fields mapping(from json field to model column, similar to getPopulateFieldMapping method). e.g.
+
+    ```
+    def getPopulateModelMapping(self):
+        return [
+            'text',
+            ('parentId', self.__addParentId),
+            ('replyToUser', self.__addReplyUserId),
+            ('bookId', self.__setBookId),
+            ('userId', self.__setUserId)
+        ]
+    ```
 
  3. Method put defines logic when request method is PUT
-```
-def put(self, request, keys):
+
+    ```
+    def put(self, request, keys):
         key = keys['user'][id]
         jsonBody = request.jsonBody
         firstName = jsonBody.get('firstName', None)
@@ -114,17 +163,27 @@ def put(self, request, keys):
         user.firstName = firstName
         user.save()
         return {}
-```
+    ```
 
- 4. Method delete defines logic when request method is DELETE
-```
-def delete(request, keys):
+ 4. Method delete defines logic when request method is DELETE, either overwrite delete(request, keys) method, e.g.
+
+    ```
+    def delete(request, keys):
         key = keys['user']['id']
         user = User.objects.get(id=key)
         user.valid = False
         user.save()
         return {}
-```
+    ```
+
+    or getDeleteModel, e.g.
+
+    ```
+    def getDeleteModel(self, keys):
+        return BookComment.objects.get(id=keys['bookcomment']['id'])
+    ```
+
+    If model has a column "deleteFlag", then this flag will be set to True and saved, otherwise record will be deleted from database, by call model.delete()
 
 ## API Reference
 

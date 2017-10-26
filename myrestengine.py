@@ -10,7 +10,7 @@ from django.core.paginator import Paginator, PageNotAnInteger, EmptyPage
 from functools import reduce
 import random, re, pickle, yaml, base64, json, time, datetime
 
-VERSION = '20171009'
+VERSION = '20171026'
 
 class UserContext(object):
     def __init__(self):
@@ -42,6 +42,10 @@ class ParameterErrorException(BadRequestException):
     pass
 
 
+class ValidationErrorException(BadRequestException):
+    pass
+
+
 class CreateErrorException(BadRequestException):
     pass
 
@@ -61,6 +65,29 @@ class ReadErrorException(BadRequestException):
 class MetadataUtil(object):
     def __init__(self, metadata):
         self.metadata = yaml.load(metadata)
+        self.fieldCache = {}
+        self.mandatoryFeildCache = {}
+        for k, v in self.metadata.get('sets', {}).items():
+            entity = self.metadata.get(v, {})
+            self.fieldCache.setdefault(v, {})
+            self.mandatoryFeildCache.setdefault(v, [])
+            for item in entity.get('key', []):
+                self.fieldCache[v][item['name']] = item
+                if not item.get('nullable', True):
+                    self.mandatoryFeildCache[v].append(item['name'])
+            properties = entity.get('property', [])
+            for item in properties:
+                self.fieldCache[v][item['name']] = item
+                if not item.get('nullable', True):
+                    self.mandatoryFeildCache[v].append(item['name'])
+        pass
+
+    def getFieldDef(self, entityName, fieldName):
+        cache = self.fieldCache.get(entityName, None)
+        return cache.get(fieldName, None) if cache else None
+
+    def getMandatoryFields(self, entityName):
+        return self.mandatoryFeildCache[entityName]
 
     def getEntityDef(self, entityName):
         return self.metadata.get(entityName, None)
@@ -555,6 +582,44 @@ class RESTProcessor(object):
                 jsonDict[jfield] = value
         return jsonDict
 
+    def __populateToModel(self, jsonDict, djangoModel, fields):
+        for field in fields:
+            if type(field) is tuple:
+                jfield = field[0]
+                mfield = field[1]
+            else:
+                mfield = jfield = field
+            value = jsonDict.get(jfield, None)
+            if value is None:
+                continue
+            if callable(mfield):
+                mfield(djangoModel, jsonDict[jfield])
+                continue
+            elif type(mfield) is dict:
+                value = mfield.get('value', None)
+            if type(value) is datetime.datetime:
+                value = self.__formatDateTime(value)
+            if value:
+                fieldType = self.__engine.getMetadataUtil().getProperyFeildDef(self.getBindEntityName(), jfield).get(
+                    'type', None)
+                if fieldType in ['int', 'boolean', 'float']:
+                    exec ("djangoModel.%s=%s" % (mfield, value))
+                else:
+                    exec ("djangoModel.%s='%s'" % (mfield, value))
+
+    def __validateEntity(self, json, entityInfo):
+        """Validate json request entity against metadata definition"""
+        entityName = entityInfo.get('entityName', None)
+        # entityDef = self.__engine.getMetadataUtil().getEntityDef(entityInfo.get('entityName', None))
+        mandatoryFields = self.__engine.getMetadataUtil().getMandatoryFields(entityName)
+        for f in mandatoryFields:
+            if f not in json.keys():
+                raise ValidationErrorException("Field %s is not nullable" % f)
+
+        # for key, value in json.items():
+        #     s = self.__engine.getMetadataUtil().getFieldDef(entityName, key)
+        #     print(s)
+
     def handle_http_request(self, request, params, keys, entityInfo):
         result = None
         queryType = entityInfo.get('queryType', None)
@@ -591,20 +656,49 @@ class RESTProcessor(object):
         elif request.method == 'HEAD':
             result = self.head(request)
         elif request.method == 'POST':
-            result = self.post(request)
+            self.__validateEntity(request.jsonBody, entityInfo)
+            self.postValidation(request.jsonBody)
+            try:
+                model = self.getNewModel()
+                if model:
+                    self.convertModel(request.jsonBody, model)
+                    model.save()
+                    # return self.getSingle(request, {'user': {'id': user.id}})
+                    result = self.convertData(model, None)
+                else:
+                    result = self.post(request)
+            except Exception as e:
+                raise CreateErrorException('Create error: %s' % str(e))
+            # result = self.post(request)
         elif request.method == 'PUT':
             if not keys:
                 raise ParameterErrorException('Missing key')
+            self.__validateEntity(request.jsonBody, entityInfo)
             result = self.put(request, keys)
         elif request.method == 'DELETE':
             if not keys:
                 raise ParameterErrorException('Missing key')
-            result = self.delete(request, keys)
+            try:
+                model = self.getDeleteModel(keys)
+                if model:
+                    if hasattr(model, 'deleteFlag'):
+                        model.deleteFlag = True
+                        model.save()
+                    else:
+                        model.delete()
+                    result = {}
+                else:
+                    result = self.delete(request, keys)
+            except Exception as e:
+                raise DeleteErrorException('Delete error: %s' % str(e))
         else:
             raise NotImplementedException('')
         return self.postProcessResult(result, queryType, request.method)
 
     def getBaseQuery(self):
+        return None
+
+    def getNewModel(self):
         return None
 
     def getFastQuery(self, text):
@@ -687,14 +781,23 @@ class RESTProcessor(object):
         record = self.convertData(model, None)
         return record
 
+    def postValidation(self, json):
+        pass
+
     def post(self, request):
         raise NotImplementedException("Not Implemented")
+
+    def putValidation(self, json):
+        pass
 
     def put(self, request, keys):
         raise NotImplementedException("Not Implemented")
 
     def head(self, request):
         return {}
+
+    def getDeleteModel(self, keys):
+        return None
 
     def delete(self, request, keys):
         raise NotImplementedException("Not Implemented")
@@ -717,6 +820,15 @@ class RESTProcessor(object):
             self.__populateToJson(record, model, mapping)
             return record
         return {}
+
+    def getPopulateModelMapping(self):
+        return None
+
+    def convertModel(self, json, model):
+        mapping = self.getPopulateModelMapping()
+        if mapping:
+            self.__populateToModel(json, model, mapping)
+        return model
 
     def parseToQObject(self, conditions):
         opt = conditions.get('opt', None)
