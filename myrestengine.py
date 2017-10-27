@@ -10,7 +10,8 @@ from django.core.paginator import Paginator, PageNotAnInteger, EmptyPage
 from functools import reduce
 import random, re, pickle, yaml, base64, json, time, datetime
 
-VERSION = '20171026'
+VERSION = '20171027'
+
 
 class UserContext(object):
     def __init__(self):
@@ -566,8 +567,7 @@ class RESTProcessor(object):
     def __populateToJson(self, jsonDict, djangoModel, fields):
         for field in fields:
             if type(field) is tuple:
-                jfield = field[0]
-                mfield = field[1]
+                jfield, mfield = field[0], field[1]
             else:
                 mfield = jfield = field
             if callable(mfield):
@@ -584,28 +584,35 @@ class RESTProcessor(object):
 
     def __populateToModel(self, jsonDict, djangoModel, fields):
         for field in fields:
+            custCall = False
             if type(field) is tuple:
-                jfield = field[0]
-                mfield = field[1]
+                jfield, mfield = field[0], field[1]
             else:
                 mfield = jfield = field
             value = jsonDict.get(jfield, None)
             if value is None:
                 continue
             if callable(mfield):
-                mfield(djangoModel, jsonDict[jfield])
-                continue
+                result = mfield(djangoModel, jsonDict[jfield])
+                if result is None:
+                    continue
+                else:
+                    (mfield, value) = result
+                    custCall = True
             elif type(mfield) is dict:
                 value = mfield.get('value', None)
             if type(value) is datetime.datetime:
                 value = self.__formatDateTime(value)
             if value:
-                fieldType = self.__engine.getMetadataUtil().getProperyFeildDef(self.getBindEntityName(), jfield).get(
-                    'type', None)
-                if fieldType in ['int', 'boolean', 'float']:
-                    exec ("djangoModel.%s=%s" % (mfield, value))
+                if custCall:
+                    exec ("djangoModel.%s=value" % mfield)
                 else:
-                    exec ("djangoModel.%s='%s'" % (mfield, value))
+                    fieldType = self.__engine.getMetadataUtil().getProperyFeildDef(self.getBindEntityName(), jfield).get(
+                        'type', None)
+                    if fieldType in ['int', 'boolean', 'float']:
+                        exec ("djangoModel.%s=%s" % (mfield, value))
+                    else:
+                        exec ("djangoModel.%s='%s'" % (mfield, value))
 
     def __validateEntity(self, json, entityInfo):
         """Validate json request entity against metadata definition"""
@@ -616,9 +623,9 @@ class RESTProcessor(object):
             if f not in json.keys():
                 raise ValidationErrorException("Field %s is not nullable" % f)
 
-        # for key, value in json.items():
-        #     s = self.__engine.getMetadataUtil().getFieldDef(entityName, key)
-        #     print(s)
+                # for key, value in json.items():
+                #     s = self.__engine.getMetadataUtil().getFieldDef(entityName, key)
+                #     print(s)
 
     def handle_http_request(self, request, params, keys, entityInfo):
         result = None
@@ -669,7 +676,7 @@ class RESTProcessor(object):
                     result = self.post(request)
             except Exception as e:
                 raise CreateErrorException('Create error: %s' % str(e))
-            # result = self.post(request)
+                # result = self.post(request)
         elif request.method == 'PUT':
             if not keys:
                 raise ParameterErrorException('Missing key')
@@ -822,6 +829,19 @@ class RESTProcessor(object):
         return {}
 
     def getPopulateModelMapping(self):
+        """
+        Array list contains field name, each object can be:
+        1. Simple string. e.g. 'name' -> get name from json dictionary and set to model(model.name = json['name'])
+        2. Tuple object, e.g. ('name', 'nickname') -> get name from json dictionary and set to model(model.nickname = json['name'])
+        3. Tuple object with function, e.g. ('name', lambda model, value: ('name', 'new' + value)), call function to get parsed value, function must return turple like:
+           ('fieldname', value)
+        4. Tuple object with alias name and function, e.g. ('name', lambda model, value: ('nickname', 'new'+value))
+        5. No return result, can be a pure function and set model like:
+            def __setName(model, value):
+                model.name = getByValue(value)
+                return None
+        :return:
+        """
         return None
 
     def convertModel(self, json, model):
