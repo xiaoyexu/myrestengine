@@ -468,13 +468,13 @@ class RESTEngine(object):
             'keys': keys
         }
 
-    def __getContentTypes(self, request):
+    @staticmethod
+    def getContentTypes(request):
         returnTypes = []
         contentTypes = request.META.get('CONTENT_TYPE', RESTEngine.DEFAULT_CONTENT_TYPE)
         for ct in contentTypes.split(','):
             for c in ct.split(';'):
                 returnTypes.append(c)
-        # return request.META.get('CONTENT_TYPE', RESTEngine.DEFAULT_CONTENT_TYPE).split(',')
         return returnTypes
 
     def handle(self, request, path):
@@ -490,7 +490,7 @@ class RESTEngine(object):
         http_response_status = 404
         # Response header
         http_response_header = {}
-        requestContentTypes = self.__getContentTypes(request)
+        requestContentTypes = RESTEngine.getContentTypes(request)
         requiredContentTypes = request.META.get('HTTP_ACCEPT', RESTEngine.DEFAULT_CONTENT_TYPE).split(',')
         if path == '' or path is None:
             availableEntities = []
@@ -939,7 +939,7 @@ def requireProcess(need_login=True, need_decrypt=True):
                 response['Access-Control-Allow-Origin'] = '*'
                 response['Access-Control-Allow-Headers'] = 'Content-Type'
                 return response
-            requestContentTypes = self.__getContentTypes(request)
+            requestContentTypes = RESTEngine.getContentTypes(request)
             body = request.body
             if need_decrypt:
                 pass
