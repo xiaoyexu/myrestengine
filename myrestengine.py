@@ -10,7 +10,7 @@ from django.core.paginator import Paginator, PageNotAnInteger, EmptyPage
 from functools import reduce
 import random, re, pickle, yaml, base64, json, time, datetime
 
-VERSION = '20171027'
+VERSION = '20171031'
 
 
 class UserContext(object):
@@ -468,6 +468,15 @@ class RESTEngine(object):
             'keys': keys
         }
 
+    def __getContentTypes(self, request):
+        returnTypes = []
+        contentTypes = request.META.get('CONTENT_TYPE', RESTEngine.DEFAULT_CONTENT_TYPE)
+        for ct in contentTypes.split(','):
+            for c in ct.split(';'):
+                returnTypes.append(c)
+        # return request.META.get('CONTENT_TYPE', RESTEngine.DEFAULT_CONTENT_TYPE).split(',')
+        return returnTypes
+
     def handle(self, request, path):
         # Create default user context if not available
         userContext = self.getUserContext(request)
@@ -481,7 +490,7 @@ class RESTEngine(object):
         http_response_status = 404
         # Response header
         http_response_header = {}
-        requestContentTypes = request.META.get('CONTENT_TYPE', RESTEngine.DEFAULT_CONTENT_TYPE).split(',')
+        requestContentTypes = self.__getContentTypes(request)
         requiredContentTypes = request.META.get('HTTP_ACCEPT', RESTEngine.DEFAULT_CONTENT_TYPE).split(',')
         if path == '' or path is None:
             availableEntities = []
@@ -930,7 +939,7 @@ def requireProcess(need_login=True, need_decrypt=True):
                 response['Access-Control-Allow-Origin'] = '*'
                 response['Access-Control-Allow-Headers'] = 'Content-Type'
                 return response
-            requestContentTypes = request.META.get('CONTENT_TYPE', RESTEngine.DEFAULT_CONTENT_TYPE).split(',')
+            requestContentTypes = self.__getContentTypes(request)
             body = request.body
             if need_decrypt:
                 pass
