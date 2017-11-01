@@ -10,7 +10,7 @@ from django.core.paginator import Paginator, PageNotAnInteger, EmptyPage
 from functools import reduce
 import random, re, pickle, yaml, base64, json, time, datetime
 
-VERSION = '20171031'
+VERSION = '20171101'
 
 
 class UserContext(object):
@@ -229,7 +229,9 @@ class XmlConvert(object):
 
 class RESTEngine(object):
     __restApps = {}
+    __responseHeader = {}
     __metadataUtil = None
+    __logger = None
     CONTENT_TYPE_JSON = 'application/json'
     CONTENT_TYPE_XML = 'application/xml'
     CONTENT_TYPE_TEXT = 'text/html'
@@ -238,6 +240,24 @@ class RESTEngine(object):
 
     def __init__(self):
         pass
+
+    def setLogger(self, logger):
+        self.__logger = logger
+
+    def __logInfo(self, logstr):
+        if self.__logger:
+            self.__logger.info(logstr)
+
+    def __logError(self, logstr):
+        if self.__logger:
+            self.__logger.error(logstr)
+
+    def setResponseHeader(self, headers):
+        self.__responseHeader = headers
+
+    def manipulateResponseHeader(self, response):
+        for k, v in self.__responseHeader.items():
+            response[k] = v
 
     def registerProcessor(self, entityName, processor):
         processor.setEngine(self)
@@ -314,9 +334,11 @@ class RESTEngine(object):
         userContext = self.getUserContext(request)
         csrfTokenInfo = userContext.csrfTokenInfo
         if not csrfToken or not csrfTokenInfo:
+            self.__logError("No csrf-token in session or request")
             return False
         if time.time() <= csrfTokenInfo['expire'] and csrfToken == csrfTokenInfo['token']:
             return True
+        self.__logError("csrf-token is expired")
         return False
 
     def __validatePath(self, pathArray):
@@ -521,8 +543,7 @@ class RESTEngine(object):
         response.status_code = http_response_status
         for k, v in http_response_header.items():
             response[k] = v
-        response['Access-Control-Allow-Origin'] = '*'
-        response['Access-Control-Allow-Headers'] = 'Content-Type'
+        self.manipulateResponseHeader(response)
         return response
 
 
@@ -616,7 +637,8 @@ class RESTProcessor(object):
                 if custCall:
                     exec ("djangoModel.%s=value" % mfield)
                 else:
-                    fieldType = self.__engine.getMetadataUtil().getProperyFeildDef(self.getBindEntityName(), jfield).get(
+                    fieldType = self.__engine.getMetadataUtil().getProperyFeildDef(self.getBindEntityName(),
+                                                                                   jfield).get(
                         'type', None)
                     if fieldType in ['int', 'boolean', 'float']:
                         exec ("djangoModel.%s=%s" % (mfield, value))
@@ -631,10 +653,6 @@ class RESTProcessor(object):
         for f in mandatoryFields:
             if f not in json.keys():
                 raise ValidationErrorException("Field %s is not nullable" % f)
-
-                # for key, value in json.items():
-                #     s = self.__engine.getMetadataUtil().getFieldDef(entityName, key)
-                #     print(s)
 
     def handle_http_request(self, request, params, keys, entityInfo):
         result = None
@@ -936,8 +954,7 @@ def requireProcess(need_login=True, need_decrypt=True):
             request = args[0]
             if request.method == 'OPTIONS':
                 response = HttpResponse()
-                response['Access-Control-Allow-Origin'] = '*'
-                response['Access-Control-Allow-Headers'] = 'Content-Type'
+                restEngine.manipulateResponseHeader(response)
                 return response
             requestContentTypes = RESTEngine.getContentTypes(request)
             body = request.body
@@ -980,3 +997,6 @@ def requireProcess(need_login=True, need_decrypt=True):
         return check
 
     return decorate
+
+
+restEngine = RESTEngine()
