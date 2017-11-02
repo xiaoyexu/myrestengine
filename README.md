@@ -34,7 +34,7 @@ user:
 ```
 In this case, implement ``getListByKey`` method in roles or orgs processor, e.g.
 ```    
-def getListByKey(self, keys):
+def getListByKey(self, keys, expandName=None):
         return Roles.objects.filter(user__id=keys['user']['id'])
 ```
 
@@ -74,7 +74,7 @@ def getFastQuery(self):
 
  3. getListByKey return query set if navigated from other entity, e.g. when calling api/orgs(1)/users, the user list is filtered by org id
 ```
-def getListByKey(self, keys):
+def getListByKey(self, keys, expandName=None):
         orgId = keys['org']['id']
         userIds = [bpr.bpB.id for bpr in BPRelation.objects.filter(relation__key='HAS_MEMBER', bpA__id=orgId)]
         return self.getBaseDjangoModel().objects.filter(id__in=userIds)
@@ -141,6 +141,9 @@ def getListByKey(self, keys):
     And define fields mapping(from json field to model column, similar to getPopulateFieldMapping method). e.g.
 
     ```
+    def __addParentId(m, v):
+        m.parentComment = BookComment.objects.get(id=v)
+
     def getPopulateModelMapping(self):
         return [
             'text',
@@ -150,6 +153,12 @@ def getListByKey(self, keys):
             ('userId', self.__setUserId)
         ]
     ```
+
+    __addParentId is a function take model, value as parameters and return a tuple. Or use lambda like
+    ```
+    ('parentId', lambda m, v: ('parentComment', BookComment.objects.get(id=v))),
+    ```
+    This function take parentId value, find related BookComment object as model filed name "parentComment".
 
  3. Method put defines logic when request method is PUT
 

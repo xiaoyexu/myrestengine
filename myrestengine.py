@@ -507,9 +507,6 @@ class RESTEngine(object):
             self.setUserContext(request, userContext)
         # Split request entities
         pathArray = path.split('/')
-        # log.info('Request path: %s' % pathArray)
-        # Default http status
-        http_response_status = 404
         # Response header
         http_response_header = {}
         requestContentTypes = RESTEngine.getContentTypes(request)
@@ -648,7 +645,6 @@ class RESTProcessor(object):
     def __validateEntity(self, json, entityInfo):
         """Validate json request entity against metadata definition"""
         entityName = entityInfo.get('entityName', None)
-        # entityDef = self.__engine.getMetadataUtil().getEntityDef(entityInfo.get('entityName', None))
         mandatoryFields = self.__engine.getMetadataUtil().getMandatoryFields(entityName)
         for f in mandatoryFields:
             if f not in json.keys():
@@ -697,13 +693,11 @@ class RESTProcessor(object):
                 if model:
                     self.convertModel(request.jsonBody, model)
                     model.save()
-                    # return self.getSingle(request, {'user': {'id': user.id}})
                     result = self.convertData(model, None)
                 else:
                     result = self.post(request)
             except Exception as e:
                 raise CreateErrorException('Create error: %s' % str(e))
-                # result = self.post(request)
         elif request.method == 'PUT':
             if not keys:
                 raise ParameterErrorException('Missing key')
@@ -748,7 +742,6 @@ class RESTProcessor(object):
         return None
 
     def getList(self, request, keys, **kwargs):
-        userContext = RESTEngine.getUserContext(request)
         query = self.getBaseQuery()
         if not query:
             query = Q()
@@ -811,7 +804,6 @@ class RESTProcessor(object):
         if baseQ:
             q.add(baseQ, Q.AND)
         model = djangoModel.objects.get(q)
-        userContext = RESTEngine.getUserContext(request)
         record = self.convertData(model, None)
         return record
 
@@ -944,7 +936,6 @@ class RESTProcessor(object):
 def requireProcess(need_login=True, need_decrypt=True):
     def decorate(view_func):
         def errorResponse(status, message):
-            # log.error('%s %s' % (message, traceback.extract_stack(limit=5)))
             content = {'error': message}
             response = HttpResponse(status=status, content=json.dumps(content))
             response['Content-Type'] = 'application/json'
