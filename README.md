@@ -254,13 +254,26 @@ class BookProcessor(RESTProcessor):
 book = BookProcessor(Book)
 ```
 
-* Create rest Engine
+* Use restEngine singleton instance instead of creating one
 
 ```
-restEngine = RESTEngine()
 restEngine.registerProcessor('book', book)
 f = open('<path to>api_metadata.yaml')
 restEngine.loadMetadata(f)
+```
+
+* Set logger or response headers if needed, for example
+
+```
+# logger is django object like, i.e. logger = logging.getLogger('default')
+restEngine.setLogger(logger)
+restEngine.setResponseHeader({
+    'Access-Control-Allow-Origin': '*',
+    'Access-Control-Allow-Headers': 'Content-Type, Accept, csrf-token',
+    'Access-Control-Allow-Methods': 'GET,PUT,DELETE,POST,HEAD,OPTIONS',
+    'Cache-Control': 'no-cache',
+    'Access-Control-Expose-Headers': 'csrf-token'
+})
 ```
 
 * Add entry point

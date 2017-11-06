@@ -321,13 +321,13 @@ class RESTEngine(object):
             token = self.__getRandomToken()
             tokenBytes = token.encode('utf-8')
             result = base64.encodebytes(tokenBytes)
-            # token = base64.encodestring(self.__getRandomToken())[:-1]
             token = result.decode('utf-8')[:-1]
             expire = time.time() + 3600
             userContext = self.getUserContext(request)
             userContext.csrfTokenInfo = {'token': token, 'expire': expire}
             header['csrf-token'] = token
             self.setUserContext(request, userContext)
+            self.__logger.info('Token generated and set to session context')
 
     def __validateCsrfToken(self, request):
         csrfToken = request.META.get('HTTP_CSRF_TOKEN', None)
@@ -423,7 +423,7 @@ class RESTEngine(object):
         return reduce(lambda x, y: x << 1 | y, list(map(lambda x: pFunc(x), pArray))) == 2 ** len(pArray) - 1
 
     def __getEntityInfo(self, urlPath):
-        regItem = re.match(r'(\w*)(\(.*\))?', urlPath)
+        regItem = re.match(r'^(\w*)(\((.*)\))?$', urlPath)
         if not regItem:
             raise ParameterErrorException('Wrong Url pattern')
         entitySet = regItem.group(1)
