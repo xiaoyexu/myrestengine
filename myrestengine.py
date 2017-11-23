@@ -10,7 +10,7 @@ from django.core.paginator import Paginator, PageNotAnInteger, EmptyPage
 from functools import reduce
 import random, re, pickle, yaml, base64, json, time, datetime
 
-VERSION = '20171101'
+VERSION = '20171123'
 
 
 class UserContext(object):
@@ -67,20 +67,27 @@ class MetadataUtil(object):
     def __init__(self, metadata):
         self.metadata = yaml.load(metadata)
         self.fieldCache = {}
-        self.mandatoryFeildCache = {}
+        self.keyFieldCache = {}
+        self.mandatoryFieldCache = {}
+        self.updatableFieldCache = {}
         for k, v in self.metadata.get('sets', {}).items():
             entity = self.metadata.get(v, {})
             self.fieldCache.setdefault(v, {})
-            self.mandatoryFeildCache.setdefault(v, [])
+            self.keyFieldCache.setdefault(v, {})
+            self.mandatoryFieldCache.setdefault(v, [])
+            self.updatableFieldCache.setdefault(v, [])
             for item in entity.get('key', []):
                 self.fieldCache[v][item['name']] = item
+                self.keyFieldCache[v][item['name']] = item
                 if not item.get('nullable', True):
-                    self.mandatoryFeildCache[v].append(item['name'])
+                    self.mandatoryFieldCache[v].append(item['name'])
             properties = entity.get('property', [])
             for item in properties:
                 self.fieldCache[v][item['name']] = item
                 if not item.get('nullable', True):
-                    self.mandatoryFeildCache[v].append(item['name'])
+                    self.mandatoryFieldCache[v].append(item['name'])
+                if item.get('updatable', False):
+                    self.updatableFieldCache[v].append(item['name'])
         pass
 
     def getFieldDef(self, entityName, fieldName):
@@ -88,10 +95,22 @@ class MetadataUtil(object):
         return cache.get(fieldName, None) if cache else None
 
     def getMandatoryFields(self, entityName):
-        return self.mandatoryFeildCache[entityName]
+        return self.mandatoryFieldCache[entityName]
 
     def getEntityDef(self, entityName):
         return self.metadata.get(entityName, None)
+
+    def isKeyField(self, entityName, fieldName):
+        cache = self.keyFieldCache.get(entityName, None)
+        if cache.get(fieldName, None):
+            return True
+        return False
+
+    def isFieldUpdatable(self, entityName, fieldName):
+        cache = self.updatableFieldCache.get(entityName, None)
+        if fieldName in cache:
+            return True
+        return False
 
     def getKeyFieldDef(self, entityName, keyName=None):
         entityDef = self.getEntityDef(entityName)
@@ -609,13 +628,18 @@ class RESTProcessor(object):
                 jsonDict[jfield] = value
         return jsonDict
 
-    def __populateToModel(self, jsonDict, djangoModel, fields):
+    def __populateToModel(self, jsonDict, djangoModel, fields, usage):
         for field in fields:
             custCall = False
             if type(field) is tuple:
                 jfield, mfield = field[0], field[1]
             else:
                 mfield = jfield = field
+            if usage == 'UPDATE':
+                # Ignore key field and non-updatable fields
+                if self.__engine.getMetadataUtil().isKeyField(self.getBindEntityName(), jfield) \
+                        or not self.__engine.getMetadataUtil().isFieldUpdatable(self.getBindEntityName(),jfield):
+                    continue
             value = jsonDict.get(jfield, None)
             if value is None:
                 continue
@@ -630,17 +654,17 @@ class RESTProcessor(object):
                 value = mfield.get('value', None)
             if type(value) is datetime.datetime:
                 value = self.__formatDateTime(value)
-            if value:
+            if value is not None:
                 if custCall:
-                    exec ("djangoModel.%s=value" % mfield)
+                    exec("djangoModel.%s=value" % mfield)
                 else:
                     fieldType = self.__engine.getMetadataUtil().getProperyFeildDef(self.getBindEntityName(),
                                                                                    jfield).get(
                         'type', None)
                     if fieldType in ['int', 'boolean', 'float']:
-                        exec ("djangoModel.%s=%s" % (mfield, value))
+                        exec("djangoModel.%s=%s" % (mfield, value))
                     else:
-                        exec ("djangoModel.%s='%s'" % (mfield, value))
+                        exec("djangoModel.%s='%s'" % (mfield, value))
 
     def __validateEntity(self, json, entityInfo):
         """Validate json request entity against metadata definition"""
@@ -691,7 +715,7 @@ class RESTProcessor(object):
             try:
                 model = self.getNewModel()
                 if model:
-                    self.convertModel(request.jsonBody, model)
+                    self.convertModel(request.jsonBody, model, 'CREATE')
                     model.save()
                     result = self.convertData(model, None)
                 else:
@@ -702,7 +726,18 @@ class RESTProcessor(object):
             if not keys:
                 raise ParameterErrorException('Missing key')
             self.__validateEntity(request.jsonBody, entityInfo)
-            result = self.put(request, keys)
+            self.putValidation(request.jsonBody)
+            try:
+                model = self.getPutModel(keys)
+                if model:
+                    self.convertModel(request.jsonBody, model, 'UPDATE')
+                    model.save()
+                    return {}
+                else:
+                    result = self.put(request, keys)
+            except Exception as e:
+                raise UpdateErrorException('Update error: %s' % str(e))
+
         elif request.method == 'DELETE':
             if not keys:
                 raise ParameterErrorException('Missing key')
@@ -807,6 +842,9 @@ class RESTProcessor(object):
         record = self.convertData(model, None)
         return record
 
+    def getModelByKey(self, keys):
+        return None
+
     def postValidation(self, json):
         pass
 
@@ -819,11 +857,14 @@ class RESTProcessor(object):
     def put(self, request, keys):
         raise NotImplementedException("Not Implemented")
 
+    def getPutModel(self, keys):
+        return self.getModelByKey(keys)
+
     def head(self, request):
         return {}
 
     def getDeleteModel(self, keys):
-        return None
+        return self.getModelByKey(keys)
 
     def delete(self, request, keys):
         raise NotImplementedException("Not Implemented")
@@ -863,10 +904,10 @@ class RESTProcessor(object):
         """
         return None
 
-    def convertModel(self, json, model):
+    def convertModel(self, json, model, usage):
         mapping = self.getPopulateModelMapping()
         if mapping:
-            self.__populateToModel(json, model, mapping)
+            self.__populateToModel(json, model, mapping, usage)
         return model
 
     def parseToQObject(self, conditions):
