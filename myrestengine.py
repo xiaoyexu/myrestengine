@@ -251,6 +251,7 @@ class RESTEngine(object):
     __responseHeader = {}
     __metadataUtil = None
     __logger = None
+    __csrfTokenRequired = True
     CONTENT_TYPE_JSON = 'application/json'
     CONTENT_TYPE_XML = 'application/xml'
     CONTENT_TYPE_TEXT = 'text/html'
@@ -270,6 +271,9 @@ class RESTEngine(object):
     def __logError(self, logstr):
         if self.__logger:
             self.__logger.error(logstr)
+
+    def setCsrfTokenRequired(self, required):
+        self.__csrfTokenRequired = required
 
     def setResponseHeader(self, headers):
         self.__responseHeader = headers
@@ -548,7 +552,7 @@ class RESTEngine(object):
             http_response_status = 200
         else:
             # For POST PUT DELETE
-            if not self.__validateCsrfToken(request):
+            if self.__csrfTokenRequired and not self.__validateCsrfToken(request):
                 raise NoAuthException('csrf token error')
             result = self.__process(request, pathArray, None)
             if method == 'POST':
@@ -638,7 +642,7 @@ class RESTProcessor(object):
             if usage == 'UPDATE':
                 # Ignore key field and non-updatable fields
                 if self.__engine.getMetadataUtil().isKeyField(self.getBindEntityName(), jfield) \
-                        or not self.__engine.getMetadataUtil().isFieldUpdatable(self.getBindEntityName(),jfield):
+                        or not self.__engine.getMetadataUtil().isFieldUpdatable(self.getBindEntityName(), jfield):
                     continue
             value = jsonDict.get(jfield, None)
             if value is None:
