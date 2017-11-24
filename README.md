@@ -38,6 +38,22 @@ def getListByKey(self, keys, expandName=None):
         return Roles.objects.filter(user__id=keys['user']['id'])
 ```
 
+## Database table
+
+Recommend to have below 3 fields for all django models
+
+1. createdAt
+2. updatedAt
+3. deleteFlag
+
+e.g.
+
+```
+createdAt = models.DateTimeField(auto_now_add=True, verbose_name=u"CreatedAt")
+updatedAt = models.DateTimeField(auto_now=True, verbose_name=u"UpdatedAt")
+deleteFlag = models.BooleanField(default=False, verbose_name=u"Deleted")
+```
+
 ## Processor
 The CRUD function of entity is handled by a processor which extends from RESTProcessor object. To simple create a processor, follow:
 * Create subclass of RESTProcessor, e.g.
@@ -160,7 +176,25 @@ def getListByKey(self, keys, expandName=None):
     ```
     This function take parentId value, find related BookComment object as model filed name "parentComment".
 
- 3. Method put defines logic when request method is PUT
+ 3. Method put defines logic when request method is PUT.
+
+    Overwrite getModelByKey method(will be used for updating and deleting)
+
+    ```
+    def getModelByKey(self, keys):
+        return Chapter.objects.get(id=keys['chapter']['id'])
+    ```
+
+    All fields marked with `updatable` with value true will be updated and saved.
+
+    Alternatively, for complex and custimzing logic, overwrite getPutModel method to return None
+
+    ```
+    def getPutModel(keys):
+        return None
+    ```
+
+    Then overwrite put method like
 
     ```
     def put(self, request, keys):
@@ -174,7 +208,14 @@ def getListByKey(self, keys, expandName=None):
         return {}
     ```
 
- 4. Method delete defines logic when request method is DELETE, either overwrite delete(request, keys) method, e.g.
+ 4. Method delete defines logic when request method is DELETE, either overwrite `getDeleteModel(self, keys)` and `delete(self, request, keys)` method, e.g.
+
+    ```
+    def getDeleteModel(keys):
+        return None
+    ```
+
+    And
 
     ```
     def delete(request, keys):
@@ -185,10 +226,10 @@ def getListByKey(self, keys, expandName=None):
         return {}
     ```
 
-    or getDeleteModel, e.g.
+    or do nothing if already defined `getModelByKey`, e.g.
 
     ```
-    def getDeleteModel(self, keys):
+    def getModelByKey(self, keys):
         return BookComment.objects.get(id=keys['bookcomment']['id'])
     ```
 

@@ -10,7 +10,7 @@ from django.core.paginator import Paginator, PageNotAnInteger, EmptyPage
 from functools import reduce
 import random, re, pickle, yaml, base64, json, time, datetime
 
-VERSION = '20171123'
+VERSION = '20171124'
 
 
 class UserContext(object):
@@ -759,7 +759,7 @@ class RESTProcessor(object):
         return self.postProcessResult(result, queryType, request.method)
 
     def getBaseQuery(self):
-        return None
+        return Q(deleteFlag=False)
 
     def getNewModel(self):
         return None
