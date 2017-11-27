@@ -1,5 +1,5 @@
 # -*- coding: UTF-8 -*-
-from django.http import HttpResponse
+from django.http import HttpResponse, RawPostDataException
 from .myparser import *
 from xml.etree.ElementTree import Element, tostring, fromstring
 from django.utils import timezone
@@ -10,7 +10,7 @@ from django.core.paginator import Paginator, PageNotAnInteger, EmptyPage
 from functools import reduce
 import random, re, pickle, yaml, base64, json, time, datetime
 
-VERSION = '20171124'
+VERSION = '20171127'
 
 
 class UserContext(object):
@@ -251,6 +251,7 @@ class RESTEngine(object):
     __responseHeader = {}
     __metadataUtil = None
     __logger = None
+    __dbLogger = None
     __csrfTokenRequired = True
     CONTENT_TYPE_JSON = 'application/json'
     CONTENT_TYPE_XML = 'application/xml'
@@ -264,11 +265,18 @@ class RESTEngine(object):
     def setLogger(self, logger):
         self.__logger = logger
 
-    def __logInfo(self, logstr):
+    def setDBLogger(self, dbLogger):
+        self.__dbLogger = dbLogger
+
+    def dbLogger(self, request, response, **kwargs):
+        if self.__dbLogger:
+            self.__dbLogger(request, response, **kwargs)
+
+    def logInfo(self, logstr):
         if self.__logger:
             self.__logger.info(logstr)
 
-    def __logError(self, logstr):
+    def logError(self, logstr):
         if self.__logger:
             self.__logger.error(logstr)
 
@@ -350,18 +358,18 @@ class RESTEngine(object):
             userContext.csrfTokenInfo = {'token': token, 'expire': expire}
             header['csrf-token'] = token
             self.setUserContext(request, userContext)
-            self.__logger.info('Token generated and set to session context')
+            self.logInfo('Token generated and set to session context')
 
     def __validateCsrfToken(self, request):
         csrfToken = request.META.get('HTTP_CSRF_TOKEN', None)
         userContext = self.getUserContext(request)
         csrfTokenInfo = userContext.csrfTokenInfo
         if not csrfToken or not csrfTokenInfo:
-            self.__logError("No csrf-token in session or request")
+            self.logError("No csrf-token in session or request")
             return False
         if time.time() <= csrfTokenInfo['expire'] and csrfToken == csrfTokenInfo['token']:
             return True
-        self.__logError("csrf-token is expired")
+        self.logError("csrf-token is expired")
         return False
 
     def __validatePath(self, pathArray):
@@ -1016,19 +1024,42 @@ def requireProcess(need_login=True, need_decrypt=True):
                 # if User.objects.filter(userId=userId).count() == 0:
                 #     return errorResponse(403, 'Invalid user')
             try:
-                return view_func(*args, **kwargs)
+                response = view_func(*args, **kwargs)
             except BadRequestException as e:
-                return errorResponse(400, str(e))
+                response = errorResponse(400, str(e))
             except ObjectDoesNotExist as e:
-                return errorResponse(404, str(e))
+                response = errorResponse(404, str(e))
             except NotImplementedException as e:
-                return errorResponse(501, str(e))
+                response = errorResponse(501, str(e))
             except NoAuthException as e:
-                return errorResponse(403, str(e))
+                response = errorResponse(403, str(e))
             except InternalException as e:
-                return errorResponse(500, 'Internal server error: %s' % str(e))
+                response = errorResponse(500, 'Internal server error: %s' % str(e))
             except Exception as e:
-                return errorResponse(500, str(e))
+                response = errorResponse(500, str(e))
+            try:
+                kwargs = {
+                    'REMOTE_ADDR': request.META['REMOTE_ADDR'],
+                    'VIEW_FUNC_NAME': view_func.__name__,
+                    'METHOD': request.method,
+                    'PATH': request.path,
+                    'PATH_INFO': request.path_info,
+                    'STATUS_CODE': response.status_code,
+                    'URL': response.url if hasattr(response, 'url') else None,
+                    'META': str(request.META),
+                    'POST': str(request.POST),
+                    'GET': str(request.GET),
+                    'COOKIES': str(request.COOKIES),
+                    'BODY': 'N/A'
+                }
+                try:
+                    kwargs['BODY'] = str(request.body)
+                except RawPostDataException:
+                    pass
+                restEngine.dbLogger(request, response, **kwargs)
+            except Exception as e:
+                restEngine.logError('DBLogger failed with: %s\nInfo:%s' % (str(e), kwargs))
+            return response
 
         return check
 
