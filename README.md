@@ -34,8 +34,24 @@ user:
 ```
 In this case, implement ``getListByKey`` method in roles or orgs processor, e.g.
 ```    
-def getListByKey(self, keys):
+def getListByKey(self, keys, expandName=None):
         return Roles.objects.filter(user__id=keys['user']['id'])
+```
+
+## Database table
+
+Recommend to have below 3 fields for all django models
+
+1. createdAt
+2. updatedAt
+3. deleteFlag
+
+e.g.
+
+```
+createdAt = models.DateTimeField(auto_now_add=True, verbose_name=u"CreatedAt")
+updatedAt = models.DateTimeField(auto_now=True, verbose_name=u"UpdatedAt")
+deleteFlag = models.BooleanField(default=False, verbose_name=u"Deleted")
 ```
 
 ## Processor
@@ -74,7 +90,7 @@ def getFastQuery(self):
 
  3. getListByKey return query set if navigated from other entity, e.g. when calling api/orgs(1)/users, the user list is filtered by org id
 ```
-def getListByKey(self, keys):
+def getListByKey(self, keys, expandName=None):
         orgId = keys['org']['id']
         userIds = [bpr.bpB.id for bpr in BPRelation.objects.filter(relation__key='HAS_MEMBER', bpA__id=orgId)]
         return self.getBaseDjangoModel().objects.filter(id__in=userIds)
@@ -83,17 +99,33 @@ def getListByKey(self, keys):
 * Other methods for post, put, delete
 
  1. convertData returns json result of a django model object, phrase text can be retrieved if language is given. E.g.
-```
-def convertData(self, model, language=None):
+
+    ```
+    def convertData(self, model, language=None):
         record = {}
         record['id'] = model.id
         ...
         return record
-```
+    ```
 
- 2. Method post defines logic when request method is POST, e.g.
-```
-def post(self, request):
+    You can also provide a model to json field mapping by overwrite method getPopulateFieldMapping, e.g.
+
+    ```
+    def getPopulateFieldMapping(self):
+       return [
+           'id',
+           ('bookId', lambda m: m.book.id),
+           ('bookName', lambda m: m.book.name),
+           'category'
+       ]
+   ```
+
+ 2. Method post defines logic when request method is POST
+
+    One way is to overwrite post(self, request) method, e.g.
+
+    ```
+    def post(self, request):
         jsonBody = request.jsonBody
         # Get fields from jsonBody and create data
         firstName = jsonBody.get('firstName', None)
@@ -101,11 +133,71 @@ def post(self, request):
         user.firstName = firstName
         user.save()
         return self.convertData(user)
- ```
+    ```
 
- 3. Method put defines logic when request method is PUT
-```
-def put(self, request, keys):
+      Another option is to overwrite getNewModel, e.g.
+
+    ```
+    def getNewModel(self):
+        return BookComment()
+    ```
+
+    And overwrite postValidation for validation, e.g.
+
+    ```
+    def postValidation(self, json):
+        bookId = json.get('bookId', None)
+        userId = json.get('userId', None)
+        text = json.get('text', None)
+        if not bookId or not userId or not text:
+            raise ParameterErrorException('No bookId userId or text given')
+
+    ```
+
+    And define fields mapping(from json field to model column, similar to getPopulateFieldMapping method). e.g.
+
+    ```
+    def __addParentId(m, v):
+        m.parentComment = BookComment.objects.get(id=v)
+
+    def getPopulateModelMapping(self):
+        return [
+            'text',
+            ('parentId', self.__addParentId),
+            ('replyToUser', self.__addReplyUserId),
+            ('bookId', self.__setBookId),
+            ('userId', self.__setUserId)
+        ]
+    ```
+
+    __addParentId is a function take model, value as parameters and return a tuple. Or use lambda like
+    ```
+    ('parentId', lambda m, v: ('parentComment', BookComment.objects.get(id=v))),
+    ```
+    This function take parentId value, find related BookComment object as model filed name "parentComment".
+
+ 3. Method put defines logic when request method is PUT.
+
+    Overwrite getModelByKey method(will be used for updating and deleting)
+
+    ```
+    def getModelByKey(self, keys):
+        return Chapter.objects.get(id=keys['chapter']['id'])
+    ```
+
+    All fields marked with `updatable` with value true will be updated and saved.
+
+    Alternatively, for complex and custimzing logic, overwrite getPutModel method to return None
+
+    ```
+    def getPutModel(keys):
+        return None
+    ```
+
+    Then overwrite put method like
+
+    ```
+    def put(self, request, keys):
         key = keys['user'][id]
         jsonBody = request.jsonBody
         firstName = jsonBody.get('firstName', None)
@@ -114,17 +206,34 @@ def put(self, request, keys):
         user.firstName = firstName
         user.save()
         return {}
-```
+    ```
 
- 4. Method delete defines logic when request method is DELETE
-```
-def delete(request, keys):
+ 4. Method delete defines logic when request method is DELETE, either overwrite `getDeleteModel(self, keys)` and `delete(self, request, keys)` method, e.g.
+
+    ```
+    def getDeleteModel(keys):
+        return None
+    ```
+
+    And
+
+    ```
+    def delete(request, keys):
         key = keys['user']['id']
         user = User.objects.get(id=key)
         user.valid = False
         user.save()
         return {}
-```
+    ```
+
+    or do nothing if already defined `getModelByKey`, e.g.
+
+    ```
+    def getModelByKey(self, keys):
+        return BookComment.objects.get(id=keys['bookcomment']['id'])
+    ```
+
+    If model has a column "deleteFlag", then this flag will be set to True and saved, otherwise record will be deleted from database, by call model.delete()
 
 ## API Reference
 
@@ -186,13 +295,26 @@ class BookProcessor(RESTProcessor):
 book = BookProcessor(Book)
 ```
 
-* Create rest Engine
+* Use restEngine singleton instance instead of creating one
 
 ```
-restEngine = RESTEngine()
 restEngine.registerProcessor('book', book)
 f = open('<path to>api_metadata.yaml')
 restEngine.loadMetadata(f)
+```
+
+* Set logger or response headers if needed, for example
+
+```
+# logger is django object like, i.e. logger = logging.getLogger('default')
+restEngine.setLogger(logger)
+restEngine.setResponseHeader({
+    'Access-Control-Allow-Origin': '*',
+    'Access-Control-Allow-Headers': 'Content-Type, Accept, csrf-token',
+    'Access-Control-Allow-Methods': 'GET,PUT,DELETE,POST,HEAD,OPTIONS',
+    'Cache-Control': 'no-cache',
+    'Access-Control-Expose-Headers': 'csrf-token'
+})
 ```
 
 * Add entry point
