@@ -1058,8 +1058,9 @@ def requireProcess(need_login=True, need_decrypt=True):
                 err, fmt, tb = getError(e)
                 response = errorResponse(500, str(e))
             try:
+                ip = request.META['HTTP_X_REAL_IP'] if request.META.get('HTTP_X_REAL_IP', None) else request.META['REMOTE_ADDR']
                 kwargs = {
-                    'REMOTE_ADDR': request.META['REMOTE_ADDR'],
+                    'REMOTE_ADDR': ip,
                     'VIEW_FUNC_NAME': view_func.__name__,
                     'METHOD': request.method,
                     'PATH': request.path,
