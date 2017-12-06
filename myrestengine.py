@@ -11,7 +11,7 @@ from functools import reduce
 import random, re, pickle, yaml, base64, json, time, datetime
 import traceback
 
-VERSION = '20171203'
+VERSION = '20171206'
 
 
 class UserContext(object):
@@ -811,7 +811,9 @@ class RESTProcessor(object):
         order = kwargs.get('order', [])
         order = tuple(order)
         if type(djangoresult) is QuerySet:
-            djangoresult = djangoresult.filter(query).order_by(*order)
+            djangoresult = djangoresult.filter(query)
+            if order:
+                djangoresult = djangoresult.order_by(*order)
         else:
             djangoModel = self.getDjangoModelCls() if not self.__baseDjangoModel else self.__baseDjangoModel
             if not djangoModel:
