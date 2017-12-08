@@ -637,7 +637,7 @@ class RESTProcessor(object):
                 value = eval('djangoModel.%s' % mfield)
             if type(value) is datetime.datetime:
                 value = self.__formatDateTime(value)
-            if value:
+            if value is not None:
                 jsonDict[jfield] = value
         return jsonDict
 
