@@ -1,3 +1,4 @@
+# -*- coding: UTF-8 -*-
 import re
 
 
@@ -104,16 +105,16 @@ class Parser(object):
                 (1, ',')
             ],
             'operator': [
-                (1, '='),
-                (2, '!='),
-                (1, '@'),
-                (2, '!@'),
-                (1, '%'),
-                (2, '!%'),
-                (1, '>'),
-                (1, '<'),
-                (2, '>='),
-                (2, '<=')
+                (1, '='),   # equal
+                (2, '!='),  # not equal
+                (1, '@'),   # between
+                (2, '!@'),  # not between
+                (1, '%'),   # contains
+                (2, '!%'),  # not contains
+                (1, '>'),   # great than
+                (1, '<'),   # less than
+                (2, '>='),  # great equal than
+                (2, '<=')   # less equal than
             ]
         }
         self.string_definition = {

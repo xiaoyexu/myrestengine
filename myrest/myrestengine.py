@@ -1,5 +1,5 @@
 # -*- coding: UTF-8 -*-
-from django.http import HttpResponse, RawPostDataException
+from django.http import HttpResponse, HttpResponseBadRequest
 from .myparser import *
 from xml.etree.ElementTree import Element, tostring, fromstring
 from django.utils import timezone
@@ -9,9 +9,8 @@ from django.core.exceptions import *
 from django.core.paginator import Paginator, PageNotAnInteger, EmptyPage
 from functools import reduce
 import random, re, pickle, yaml, base64, json, time, datetime
-import traceback
 
-VERSION = '20171206'
+VERSION = '20190809'
 
 
 class UserContext(object):
@@ -44,10 +43,6 @@ class ParameterErrorException(BadRequestException):
     pass
 
 
-class ValidationErrorException(BadRequestException):
-    pass
-
-
 class CreateErrorException(BadRequestException):
     pass
 
@@ -67,51 +62,9 @@ class ReadErrorException(BadRequestException):
 class MetadataUtil(object):
     def __init__(self, metadata):
         self.metadata = yaml.load(metadata)
-        self.fieldCache = {}
-        self.keyFieldCache = {}
-        self.mandatoryFieldCache = {}
-        self.updatableFieldCache = {}
-        for k, v in self.metadata.get('sets', {}).items():
-            entity = self.metadata.get(v, {})
-            self.fieldCache.setdefault(v, {})
-            self.keyFieldCache.setdefault(v, {})
-            self.mandatoryFieldCache.setdefault(v, [])
-            self.updatableFieldCache.setdefault(v, [])
-            for item in entity.get('key', []):
-                self.fieldCache[v][item['name']] = item
-                self.keyFieldCache[v][item['name']] = item
-                if not item.get('nullable', True):
-                    self.mandatoryFieldCache[v].append(item['name'])
-            properties = entity.get('property', [])
-            for item in properties:
-                self.fieldCache[v][item['name']] = item
-                if not item.get('nullable', True):
-                    self.mandatoryFieldCache[v].append(item['name'])
-                if item.get('updatable', False):
-                    self.updatableFieldCache[v].append(item['name'])
-        pass
-
-    def getFieldDef(self, entityName, fieldName):
-        cache = self.fieldCache.get(entityName, None)
-        return cache.get(fieldName, None) if cache else None
-
-    def getMandatoryFields(self, entityName):
-        return self.mandatoryFieldCache[entityName]
 
     def getEntityDef(self, entityName):
         return self.metadata.get(entityName, None)
-
-    def isKeyField(self, entityName, fieldName):
-        cache = self.keyFieldCache.get(entityName, None)
-        if cache.get(fieldName, None):
-            return True
-        return False
-
-    def isFieldUpdatable(self, entityName, fieldName):
-        cache = self.updatableFieldCache.get(entityName, None)
-        if fieldName in cache:
-            return True
-        return False
 
     def getKeyFieldDef(self, entityName, keyName=None):
         entityDef = self.getEntityDef(entityName)
@@ -249,11 +202,7 @@ class XmlConvert(object):
 
 class RESTEngine(object):
     __restApps = {}
-    __responseHeader = {}
     __metadataUtil = None
-    __logger = None
-    __dbLogger = None
-    __csrfTokenRequired = True
     CONTENT_TYPE_JSON = 'application/json'
     CONTENT_TYPE_XML = 'application/xml'
     CONTENT_TYPE_TEXT = 'text/html'
@@ -262,34 +211,6 @@ class RESTEngine(object):
 
     def __init__(self):
         pass
-
-    def setLogger(self, logger):
-        self.__logger = logger
-
-    def setDBLogger(self, dbLogger):
-        self.__dbLogger = dbLogger
-
-    def dbLogger(self, request, response, **kwargs):
-        if self.__dbLogger:
-            self.__dbLogger(request, response, **kwargs)
-
-    def logInfo(self, logstr):
-        if self.__logger:
-            self.__logger.info(logstr)
-
-    def logError(self, logstr):
-        if self.__logger:
-            self.__logger.error(logstr)
-
-    def setCsrfTokenRequired(self, required):
-        self.__csrfTokenRequired = required
-
-    def setResponseHeader(self, headers):
-        self.__responseHeader = headers
-
-    def manipulateResponseHeader(self, response):
-        for k, v in self.__responseHeader.items():
-            response[k] = v
 
     def registerProcessor(self, entityName, processor):
         processor.setEngine(self)
@@ -318,6 +239,14 @@ class RESTEngine(object):
         if not yamlFile:
             raise InternalException('No metadata file')
         self.__metadataUtil = MetadataUtil(yamlFile)
+
+    def loadMetadataFromList(self, yamlFileList):
+        for yamlFile in yamlFileList:
+            try:
+                self.loadMetadata(open(yamlFile))
+                break
+            except Exception as e:
+                raise InternalException('Failed to load yaml meta file: %s' % str(e))
 
     def getMetadataUtil(self):
         return self.__metadataUtil
@@ -353,34 +282,50 @@ class RESTEngine(object):
             token = self.__getRandomToken()
             tokenBytes = token.encode('utf-8')
             result = base64.encodebytes(tokenBytes)
+            # token = base64.encodestring(self.__getRandomToken())[:-1]
             token = result.decode('utf-8')[:-1]
             expire = time.time() + 3600
             userContext = self.getUserContext(request)
             userContext.csrfTokenInfo = {'token': token, 'expire': expire}
             header['csrf-token'] = token
             self.setUserContext(request, userContext)
-            self.logInfo('Token generated and set to session context')
 
     def __validateCsrfToken(self, request):
         csrfToken = request.META.get('HTTP_CSRF_TOKEN', None)
         userContext = self.getUserContext(request)
         csrfTokenInfo = userContext.csrfTokenInfo
         if not csrfToken or not csrfTokenInfo:
-            self.logError("No csrf-token in session or request")
             return False
         if time.time() <= csrfTokenInfo['expire'] and csrfToken == csrfTokenInfo['token']:
             return True
-        self.logError("csrf-token is expired")
         return False
 
     def __validatePath(self, pathArray):
         tmpArray = pathArray[:-1]
+        if len(pathArray) > 1:
+            depth = len(pathArray) - 1
+            for i in range(depth):
+                parentPath, subPath = pathArray[i], pathArray[i + 1]
+                subEntityInfo, parentEntityInfo = self.__getEntityInfo(subPath), self.__getEntityInfo(parentPath)
+                print(subEntityInfo)
+                print(parentEntityInfo)
+                parentEntityName = parentEntityInfo['entityName']
+                parentEntityKey = parentEntityInfo['keys']
+                subEntityName = subEntityInfo['entityName']
+                possibleExpandItems = self.__metadataUtil.getExpandFieldDef(parentEntityName)
+                if subPath not in possibleExpandItems:
+                    raise InternalException('Navigation %s is not valid from parent %s' % (subPath, parentEntityName))
+                if not parentEntityKey:
+                    # Parent entity must contain keys for cascade relationship
+                    raise InternalException('Keys must be provided for %s' % parentEntityName)
+
         parentEntityName = None
         for path in tmpArray:
             entityInfo = self.__getEntityInfo(path)
             entityName = entityInfo['entityName']
             keys = entityInfo['keys']
             if not keys:
+                # Parent entity must contain keys for cascade relationship
                 raise InternalException('Keys must be provided for %s' % entityInfo['entityName'])
             if parentEntityName:
                 possibleExpandItems = self.__metadataUtil.getExpandFieldDef(parentEntityName)
@@ -455,7 +400,7 @@ class RESTEngine(object):
         return reduce(lambda x, y: x << 1 | y, list(map(lambda x: pFunc(x), pArray))) == 2 ** len(pArray) - 1
 
     def __getEntityInfo(self, urlPath):
-        regItem = re.match(r'^(\w*)(\((.*)\))?$', urlPath)
+        regItem = re.match(r'(\w*)(\(.*\))?', urlPath)
         if not regItem:
             raise ParameterErrorException('Wrong Url pattern')
         entitySet = regItem.group(1)
@@ -522,16 +467,7 @@ class RESTEngine(object):
             'keys': keys
         }
 
-    @staticmethod
-    def getContentTypes(request):
-        returnTypes = []
-        contentTypes = request.META.get('CONTENT_TYPE', RESTEngine.DEFAULT_CONTENT_TYPE)
-        for ct in contentTypes.split(','):
-            for c in ct.split(';'):
-                returnTypes.append(c)
-        return returnTypes
-
-    def handle(self, request, path):
+    def __handle(self, request, path):
         # Create default user context if not available
         userContext = self.getUserContext(request)
         if not userContext:
@@ -539,9 +475,12 @@ class RESTEngine(object):
             self.setUserContext(request, userContext)
         # Split request entities
         pathArray = path.split('/')
+        # log.info('Request path: %s' % pathArray)
+        # Default http status
+        http_response_status = 404
         # Response header
         http_response_header = {}
-        requestContentTypes = RESTEngine.getContentTypes(request)
+        requestContentTypes = request.META.get('CONTENT_TYPE', RESTEngine.DEFAULT_CONTENT_TYPE).split(',')
         requiredContentTypes = request.META.get('HTTP_ACCEPT', RESTEngine.DEFAULT_CONTENT_TYPE).split(',')
         if path == '' or path is None:
             availableEntities = []
@@ -561,7 +500,7 @@ class RESTEngine(object):
             http_response_status = 200
         else:
             # For POST PUT DELETE
-            if self.__csrfTokenRequired and not self.__validateCsrfToken(request):
+            if not self.__validateCsrfToken(request):
                 raise NoAuthException('csrf token error')
             result = self.__process(request, pathArray, None)
             if method == 'POST':
@@ -572,8 +511,16 @@ class RESTEngine(object):
         response.status_code = http_response_status
         for k, v in http_response_header.items():
             response[k] = v
-        self.manipulateResponseHeader(response)
+        response['Access-Control-Allow-Origin'] = '*'
+        response['Access-Control-Allow-Headers'] = 'Content-Type'
         return response
+
+    def handle(self, request, path):
+        try:
+            return self.__handle(request, path)
+        except Exception as e:
+            response = HttpResponseBadRequest(str(e))
+            return response
 
 
 class RESTProcessor(object):
@@ -626,7 +573,8 @@ class RESTProcessor(object):
     def __populateToJson(self, jsonDict, djangoModel, fields):
         for field in fields:
             if type(field) is tuple:
-                jfield, mfield = field[0], field[1]
+                jfield = field[0]
+                mfield = field[1]
             else:
                 mfield = jfield = field
             if callable(mfield):
@@ -637,55 +585,9 @@ class RESTProcessor(object):
                 value = eval('djangoModel.%s' % mfield)
             if type(value) is datetime.datetime:
                 value = self.__formatDateTime(value)
-            if value is not None:
+            if value:
                 jsonDict[jfield] = value
         return jsonDict
-
-    def __populateToModel(self, jsonDict, djangoModel, fields, usage):
-        for field in fields:
-            custCall = False
-            if type(field) is tuple:
-                jfield, mfield = field[0], field[1]
-            else:
-                mfield = jfield = field
-            if usage == 'UPDATE':
-                # Ignore key field and non-updatable fields
-                if self.__engine.getMetadataUtil().isKeyField(self.getBindEntityName(), jfield) \
-                        or not self.__engine.getMetadataUtil().isFieldUpdatable(self.getBindEntityName(), jfield):
-                    continue
-            value = jsonDict.get(jfield, None)
-            if value is None:
-                continue
-            if callable(mfield):
-                result = mfield(djangoModel, jsonDict[jfield])
-                if result is None:
-                    continue
-                else:
-                    (mfield, value) = result
-                    custCall = True
-            elif type(mfield) is dict:
-                value = mfield.get('value', None)
-            if type(value) is datetime.datetime:
-                value = self.__formatDateTime(value)
-            if value is not None:
-                if custCall:
-                    exec("djangoModel.%s=value" % mfield)
-                else:
-                    fieldType = self.__engine.getMetadataUtil().getProperyFeildDef(self.getBindEntityName(),
-                                                                                   jfield).get(
-                        'type', None)
-                    if fieldType in ['int', 'boolean', 'float']:
-                        exec("djangoModel.%s=%s" % (mfield, value))
-                    else:
-                        exec("djangoModel.%s='%s'" % (mfield, value))
-
-    def __validateEntity(self, json, entityInfo):
-        """Validate json request entity against metadata definition"""
-        entityName = entityInfo.get('entityName', None)
-        mandatoryFields = self.__engine.getMetadataUtil().getMandatoryFields(entityName)
-        for f in mandatoryFields:
-            if f not in json.keys():
-                raise ValidationErrorException("Field %s is not nullable" % f)
 
     def handle_http_request(self, request, params, keys, entityInfo):
         result = None
@@ -723,58 +625,20 @@ class RESTProcessor(object):
         elif request.method == 'HEAD':
             result = self.head(request)
         elif request.method == 'POST':
-            self.__validateEntity(request.jsonBody, entityInfo)
-            self.postValidation(request.jsonBody)
-            try:
-                model = self.getNewModel()
-                if model:
-                    self.convertModel(request.jsonBody, model, 'CREATE')
-                    model.save()
-                    result = self.convertData(model, None)
-                else:
-                    result = self.post(request)
-            except Exception as e:
-                raise CreateErrorException('Create error: %s' % str(e))
+            result = self.post(request)
         elif request.method == 'PUT':
             if not keys:
                 raise ParameterErrorException('Missing key')
-            self.__validateEntity(request.jsonBody, entityInfo)
-            self.putValidation(request.jsonBody)
-            try:
-                model = self.getPutModel(keys)
-                if model:
-                    self.convertModel(request.jsonBody, model, 'UPDATE')
-                    model.save()
-                    return {}
-                else:
-                    result = self.put(request, keys)
-            except Exception as e:
-                raise UpdateErrorException('Update error: %s' % str(e))
-
+            result = self.put(request, keys)
         elif request.method == 'DELETE':
             if not keys:
                 raise ParameterErrorException('Missing key')
-            try:
-                model = self.getDeleteModel(keys)
-                if model:
-                    if hasattr(model, 'deleteFlag'):
-                        model.deleteFlag = True
-                        model.save()
-                    else:
-                        model.delete()
-                    result = {}
-                else:
-                    result = self.delete(request, keys)
-            except Exception as e:
-                raise DeleteErrorException('Delete error: %s' % str(e))
+            result = self.delete(request, keys)
         else:
             raise NotImplementedException('')
         return self.postProcessResult(result, queryType, request.method)
 
     def getBaseQuery(self):
-        return Q(deleteFlag=False)
-
-    def getNewModel(self):
         return None
 
     def getFastQuery(self, text):
@@ -790,6 +654,7 @@ class RESTProcessor(object):
         return None
 
     def getList(self, request, keys, **kwargs):
+        userContext = RESTEngine.getUserContext(request)
         query = self.getBaseQuery()
         if not query:
             query = Q()
@@ -811,9 +676,7 @@ class RESTProcessor(object):
         order = kwargs.get('order', [])
         order = tuple(order)
         if type(djangoresult) is QuerySet:
-            djangoresult = djangoresult.filter(query)
-            if order:
-                djangoresult = djangoresult.order_by(*order)
+            djangoresult = djangoresult.filter(query).order_by(*order)
         else:
             djangoModel = self.getDjangoModelCls() if not self.__baseDjangoModel else self.__baseDjangoModel
             if not djangoModel:
@@ -854,32 +717,18 @@ class RESTProcessor(object):
         if baseQ:
             q.add(baseQ, Q.AND)
         model = djangoModel.objects.get(q)
+        userContext = RESTEngine.getUserContext(request)
         record = self.convertData(model, None)
         return record
-
-    def getModelByKey(self, keys):
-        return None
-
-    def postValidation(self, json):
-        pass
 
     def post(self, request):
         raise NotImplementedException("Not Implemented")
 
-    def putValidation(self, json):
-        pass
-
     def put(self, request, keys):
         raise NotImplementedException("Not Implemented")
 
-    def getPutModel(self, keys):
-        return self.getModelByKey(keys)
-
     def head(self, request):
         return {}
-
-    def getDeleteModel(self, keys):
-        return self.getModelByKey(keys)
 
     def delete(self, request, keys):
         raise NotImplementedException("Not Implemented")
@@ -902,28 +751,6 @@ class RESTProcessor(object):
             self.__populateToJson(record, model, mapping)
             return record
         return {}
-
-    def getPopulateModelMapping(self):
-        """
-        Array list contains field name, each object can be:
-        1. Simple string. e.g. 'name' -> get name from json dictionary and set to model(model.name = json['name'])
-        2. Tuple object, e.g. ('name', 'nickname') -> get name from json dictionary and set to model(model.nickname = json['name'])
-        3. Tuple object with function, e.g. ('name', lambda model, value: ('name', 'new' + value)), call function to get parsed value, function must return turple like:
-           ('fieldname', value)
-        4. Tuple object with alias name and function, e.g. ('name', lambda model, value: ('nickname', 'new'+value))
-        5. No return result, can be a pure function and set model like:
-            def __setName(model, value):
-                model.name = getByValue(value)
-                return None
-        :return:
-        """
-        return None
-
-    def convertModel(self, json, model, usage):
-        mapping = self.getPopulateModelMapping()
-        if mapping:
-            self.__populateToModel(json, model, mapping, usage)
-        return model
 
     def parseToQObject(self, conditions):
         opt = conditions.get('opt', None)
@@ -989,32 +816,23 @@ class RESTProcessor(object):
         return result
 
 
-def getError(e):
-    errorStr = str(e)
-    if not errorStr:
-        errorStr = e.__cause__
-    if not errorStr:
-        errorStr = e.__class__
-    return errorStr, traceback.format_exc(limit=10), traceback.extract_stack(limit=10)
-
-
-def errorResponse(status, message):
-    content = {'error': message}
-    response = HttpResponse(status=status, content=json.dumps(content))
-    response['Content-Type'] = 'application/json'
-    return response
-
-
 def requireProcess(need_login=True, need_decrypt=True):
     def decorate(view_func):
+        def errorResponse(status, message):
+            # log.error('%s %s' % (message, traceback.extract_stack(limit=5)))
+            content = {'error': message}
+            response = HttpResponse(status=status, content=json.dumps(content))
+            response['Content-Type'] = 'application/json'
+            return response
 
         def check(*args, **kwargs):
             request = args[0]
             if request.method == 'OPTIONS':
                 response = HttpResponse()
-                restEngine.manipulateResponseHeader(response)
+                response['Access-Control-Allow-Origin'] = '*'
+                response['Access-Control-Allow-Headers'] = 'Content-Type'
                 return response
-            requestContentTypes = RESTEngine.getContentTypes(request)
+            requestContentTypes = request.META.get('CONTENT_TYPE', RESTEngine.DEFAULT_CONTENT_TYPE).split(',')
             body = request.body
             if need_decrypt:
                 pass
@@ -1026,7 +844,6 @@ def requireProcess(need_login=True, need_decrypt=True):
                     try:
                         body = json.loads(body)
                     except Exception as e:
-                        restEngine.logError("Error:%s\nFormatted:%s\nTrace:%s" % getError(e))
                         return errorResponse(400, 'Invalid request %s' % str(e))
                 elif 'application/xml' in requestContentTypes:
                     body = XmlConvert.xml_to_dict(request.body)
@@ -1038,59 +855,21 @@ def requireProcess(need_login=True, need_decrypt=True):
                 #     return errorResponse(403, 'Invalid login')
                 # if User.objects.filter(userId=userId).count() == 0:
                 #     return errorResponse(403, 'Invalid user')
-            (err, fmt, tb) = ('', '', '')
             try:
-                response = view_func(*args, **kwargs)
+                return view_func(*args, **kwargs)
             except BadRequestException as e:
-                err, fmt, tb = getError(e)
-                response = errorResponse(400, str(e))
+                return errorResponse(400, str(e))
             except ObjectDoesNotExist as e:
-                err, fmt, tb = getError(e)
-                response = errorResponse(404, str(e))
+                return errorResponse(404, str(e))
             except NotImplementedException as e:
-                err, fmt, tb = getError(e)
-                response = errorResponse(501, str(e))
+                return errorResponse(501, str(e))
             except NoAuthException as e:
-                err, fmt, tb = getError(e)
-                response = errorResponse(403, str(e))
+                return errorResponse(403, str(e))
             except InternalException as e:
-                err, fmt, tb = getError(e)
-                response = errorResponse(500, 'Internal server error: %s' % str(e))
+                return errorResponse(500, 'Internal server error: %s' % str(e))
             except Exception as e:
-                err, fmt, tb = getError(e)
-                response = errorResponse(500, str(e))
-            try:
-                ip = request.META['HTTP_X_REAL_IP'] if request.META.get('HTTP_X_REAL_IP', None) else request.META['REMOTE_ADDR']
-                kwargs = {
-                    'REMOTE_ADDR': ip,
-                    'VIEW_FUNC_NAME': view_func.__name__,
-                    'METHOD': request.method,
-                    'PATH': request.path,
-                    'PATH_INFO': request.path_info,
-                    'RESULT': str(response.content),
-                    'STATUS_CODE': response.status_code,
-                    'URL': response.url if hasattr(response, 'url') else None,
-                    'META': str(request.META),
-                    'POST': str(request.POST),
-                    'GET': str(request.GET),
-                    'COOKIES': str(request.COOKIES),
-                    'BODY': 'N/A',
-                    'ERROR': err,
-                    'ERROR_FORMATTED': fmt,
-                    'TRACEBACK': tb
-                }
-                try:
-                    kwargs['BODY'] = str(request.body)
-                except RawPostDataException:
-                    pass
-                restEngine.dbLogger(request, response, **kwargs)
-            except Exception as e:
-                restEngine.logError('DBLogger failed with: %s\nInfo:%s' % (str(e), kwargs))
-            return response
+                return errorResponse(500, str(e))
 
         return check
 
     return decorate
-
-
-restEngine = RESTEngine()

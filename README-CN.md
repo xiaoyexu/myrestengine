@@ -1,18 +1,21 @@
-# My Rest Engine
-The project is based on django framework, check [Django project](http://www.djangoproject.com) for details
+# 一个 RESTFUL 包装类
+基于[Django项目](http://www.djangoproject.com) 的一个RESTFUL功能模块，是学习OData后的一个练习
 
-***Development done***
+***开发基本完成***
 
-## Metadata
-When new entity added, update api_metadata.yaml file, especially the navigation changes.
+## 元数据（Metadata）
+* 实体（Entity） - 代表一行数据，通常对应数据表的一行
+* 实体集合（Entities） - 行数据的集合
 
-The file contains
-* `sets`, define the entity set name and it's entity, e.g.
+新实体增加后，需要修改api_metadata.yaml文件，重启django服务（暂无动态加载）
+
+api_metadata.yaml文件包括
+* `sets`, 实体集合和单体名字，如
 ```
 users: user
 ```
 
-* `<entity name>` define entity and it's property, e.g
+* `实体单体` 将定义其中的字段、成员，如下user包含主键(key)为name，类型为int，字段有firstname，类型string
 ```
 user:
   key:
@@ -24,7 +27,7 @@ user:
   ...
 ```
 
-* `expand` define the allowed navigation entity, allow navigate from user entity to roles and orgs entity set e.g.
+* `expand` 定义该实体可扩展到的其他实体, 即相关记录，如下表示user可有对应相关的roles（角色）和orgs（组织）
 ```
 user:
   ...
@@ -32,21 +35,21 @@ user:
   - roles
   - orgs
 ```
-In this case, implement ``getListByKey`` method in roles or orgs processor, e.g.
+这种情况下，在roles和orgs处理类中实现 ``getListByKey`` 方法，如
 ```    
 def getListByKey(self, keys, expandName=None):
         return Roles.objects.filter(user__id=keys['user']['id'])
 ```
 
-## Database table
+## 数据库表
 
-Recommend to have below 3 fields for all django models
+建议所有Django数据库包括如下字段
 
 1. createdAt
 2. updatedAt
 3. deleteFlag
 
-e.g.
+即
 
 ```
 createdAt = models.DateTimeField(auto_now_add=True, verbose_name=u"CreatedAt")
@@ -54,41 +57,43 @@ updatedAt = models.DateTimeField(auto_now=True, verbose_name=u"UpdatedAt")
 deleteFlag = models.BooleanField(default=False, verbose_name=u"Deleted")
 ```
 
-## Processor
-The CRUD function of entity is handled by a processor which extends from RESTProcessor object. To simple create a processor, follow:
-* Create subclass of RESTProcessor, e.g.
+## 处理器（Processor）
+对某实体（表）的所有CRUD操作，通过继承RESTProcessor类实现
 
+* 创建一个User的处理器
 ```
 class UserProcessor(RESTProcessor):
     pass
 ```
 
-* Register processor to a entity name, e.g.
+* 将处理器注册到引擎上，如下user为起的实体名，BP为django models.py中的一个model（表）
 
 ```
 userProcessor = UserProcessor(BP)
 ...
 restEngine.registerProcessor('user', userProcessor)
 ```
-Notice BP is the django model object defined in models.py
 
 
-* Overwrite necessory methods(getList, getSingle, post, put, head, delete, convertData)
 
- *In most cases you don't need to overwrite getList, getSingle methods, below are the functions you can overwrite for GET method.*
- 1. getBaseQuery defines basic query condition for get list or single record, e.g.
+* 实现对应的方法，如getList, getSingle, post, put, head, delete, convertData
+
+大多数情况下你不需要覆盖 getList, getSingle 方法, 对于GET方法，你可能需要覆盖如下几个
+
+ 1. getBaseQuery 定义了获取实体集合或单个实体记录的基本过滤条件, 如
+
 ```
 def getBaseQuery(self):
         return Q(valid=True)
 ```
 
- 2. getFastQuery defines query condition if parameter \_fastquery is used, this is for fuzzy search, e.g. search given text in firstName and lastName column:
+ 2. getFastQuery 定义了如果url上提供了 \_fastquery 参数的情况下的搜索条件，如下表示当有?\_fastquery=xiaoye 时该如何过滤数据
  ```
-def getFastQuery(self):
+def getFastQuery(self, text):
         return Q(Q(firstName__icontains=text) | Q(lastName__icontains=text))
  ```
 
- 3. getListByKey return query set if navigated from other entity, e.g. when calling api/orgs(1)/users, the user list is filtered by org id
+ 3. getListByKey 定义了扩展实体的返回逻辑，比如当url为 api/orgs(1)/users时，返回的user列表应该基于org id的结果过滤
 ```
 def getListByKey(self, keys, expandName=None):
         orgId = keys['org']['id']
@@ -96,9 +101,9 @@ def getListByKey(self, keys, expandName=None):
         return self.getBaseDjangoModel().objects.filter(id__in=userIds)
 ```
 
-* Other methods for post, put, delete
+* 其他方法
 
- 1. convertData returns json result of a django model object, phrase text can be retrieved if language is given. E.g.
+ 1. convertData 方法实现model到json格式的转换, 甚至可以有language参数，如
 
     ```
     def convertData(self, model, language=None):
@@ -108,7 +113,7 @@ def getListByKey(self, keys, expandName=None):
         return record
     ```
 
-    You can also provide a model to json field mapping by overwrite method getPopulateFieldMapping, e.g.
+    也可以提供一个数组，用来将model对应到json，如
 
     ```
     def getPopulateFieldMapping(self):
@@ -118,11 +123,11 @@ def getListByKey(self, keys, expandName=None):
            ('bookName', lambda m: m.book.name),
            'category'
        ]
-       ```
+    ```
 
- 2. Method post defines logic when request method is POST
+ 2. 创建记录操作
 
-    One way is to overwrite post(self, request) method, e.g.
+    一种是覆盖 post(self, request) 方法，如
 
     ```
     def post(self, request):
@@ -135,14 +140,14 @@ def getListByKey(self, keys, expandName=None):
         return self.convertData(user)
     ```
 
-      Another option is to overwrite getNewModel, e.g.
+      或者覆盖 getNewModel 方法，如
 
     ```
     def getNewModel(self):
         return BookComment()
     ```
 
-    And overwrite postValidation for validation, e.g.
+    并覆盖 postValidation 实现验证，如
 
     ```
     def postValidation(self, json):
@@ -154,7 +159,7 @@ def getListByKey(self, keys, expandName=None):
 
     ```
 
-    And define fields mapping(from json field to model column, similar to getPopulateFieldMapping method). e.g.
+    实现从json到model的转换逻辑，类似 getPopulateFieldMapping method 如
 
     ```
     def __addParentId(m, v):
@@ -170,31 +175,31 @@ def getListByKey(self, keys, expandName=None):
         ]
     ```
 
-    __addParentId is a function take model, value as parameters and return a tuple. Or use lambda like
+    __addParentId 为一个有model和value为参数的函数，用来设置model，或者用lambda表达式
     ```
     ('parentId', lambda m, v: ('parentComment', BookComment.objects.get(id=v))),
     ```
-    This function take parentId value, find related BookComment object as model filed name "parentComment".
+    上面这个函数接受json中parentId的值，作为id，找到BookComment model，设置到对应实体中，名为parentComment
 
- 3. Method put defines logic when request method is PUT.
+ 3. 修改记录操作.
 
-    Overwrite getModelByKey method(will be used for updating and deleting)
+    覆盖 getModelByKey 方法，如
 
     ```
     def getModelByKey(self, keys):
         return Chapter.objects.get(id=keys['chapter']['id'])
     ```
 
-    All fields marked with `updatable` with value true will be updated and saved.
+    在yaml文件中标记位 `updatable` 为 true 的字段会被修改和保存.
 
-    Alternatively, for complex and custimzing logic, overwrite getPutModel method to return None
+    或者对于复杂逻辑，覆盖 getPutModel 方法令其返回None
 
     ```
     def getPutModel(keys):
         return None
     ```
 
-    Then overwrite put method like
+    然后实现 put 方法，如
 
     ```
     def put(self, request, keys):
@@ -208,14 +213,22 @@ def getListByKey(self, keys, expandName=None):
         return {}
     ```
 
- 4. Method delete defines logic when request method is DELETE, either overwrite `getDeleteModel(self, keys)` and `delete(self, request, keys)` method, e.g.
+ 4. 删除实体操作
+ 
+    覆盖 `getModelByKey(self, keys)`，如
+    ```
+    def getModelByKey(self, keys):
+        return BookComment.objects.get(id=keys['bookcomment']['id'])
+    ```
+    
+    或者覆盖 `getDeleteModel(self, keys)` 和 `delete(self, request, keys)` 方法
 
     ```
     def getDeleteModel(keys):
         return None
     ```
 
-    And
+    和
 
     ```
     def delete(request, keys):
@@ -226,34 +239,28 @@ def getListByKey(self, keys, expandName=None):
         return {}
     ```
 
-    or do nothing if already defined `getModelByKey`, e.g.
+    如果model上有一个deleteFlag，那么会将其设置为True，否则使用model.delete()删除
 
-    ```
-    def getModelByKey(self, keys):
-        return BookComment.objects.get(id=keys['bookcomment']['id'])
-    ```
+## API 参考
 
-    If model has a column "deleteFlag", then this flag will be set to True and saved, otherwise record will be deleted from database, by call model.delete()
+对应实体，如果只有一个key字段，则使用形如 entity(&lt;keyvalue&gt;) 来访问一个实体
 
-## API Reference
-
-For each entity, if only one key field is available use pattern entity(&lt;keyvalue&gt;) to access single object.
-
-if value type is int, use number directly, if value type is string, it must contains quotes (') or double quotes ("), e.g.
+如果是数字型，则直接使用，如果是字符串，则需要加单引号(')或双引号(")，如
 
 ```
 /api/user(123)
-/api/role("rolename") or /api/role('rolename')
+/api/role("rolename")
+/api/role('rolename')
 ```
 
-For multiple key field, use pattern entity(&lt;keyname&gt;=&lt;keyvalue&gt;), e.g.
+多个字段作为key，则形如 entity(&lt;keyname&gt;=&lt;keyvalue&gt;)，如
 
 ```
 /api/entity(name="XYZ",age=18)
 /api/entity(name="XYZ",age=18, grade=5)
 ```
 
-Or pure values without keyname, key order in metadata file will be used to map each field.
+或者不提供字段名，则每个字段按metadata文件中定义的顺序
 
 ```
 /api/entity("XYZ",18)
@@ -261,20 +268,21 @@ Or pure values without keyname, key order in metadata file will be used to map e
 ```
 
 
-Reserved url parameters are `_query`, `_order`, `_skip`, `_top`, `_count`
+保留的url上的参数名 `_query`, `_order`, `_skip`, `_top`, `_count`
 
 Function | Example | Comment
 ---|---|---
-\_query | entity?\_query=name="user" | Filter name equals "user".<br/> operator can be =, !=, @, !@, %, !%, >, >=, <, <= <br/> @ means ranges, e.g.  @"1,10" <br/> % means contains ignore case, e.g name%"xyz" (name contains "xyz")
-\_order | entity?\_order=name,age | sort result by column, add -(minus) for descending sorting <br/> e.g. \_order=-id
-\_page | entity?\_page=5 | Return record of page 5
-\_pnum | entity?\_pnum=10 | Set 10 record for each page, default is 25
-\_count | entity?\_count | Only return count number
+\_query | entity?\_query=name="user" | 取所有name为"user"的记录<br/> 操作符有 =, !=, @, !@, %, !%, >, >=, <, <= <br/> @ 表示范围如 @"1,10" <br/> % 表示忽略大小写的包含，如 name%"xyz" (name 包含字符串 "xyz")
+\_order | entity?\_order=name,age | 排序字段，-(减号) 表示降序<br/> 如 \_order=-id
+\_page | entity?\_page=5 | 返回第5页数据
+\_pnum | entity?\_pnum=10 | 设置每页大小，默认为25
+\_count | entity?\_count | 只返回记录数
 
-## Usage in django project
+## 在Django项目中使用
 
-In the view where you want to define an api entry
-* Define processor class for a entity
+在需要的views.py中
+
+* 实现一个处理器类，如Book处理器
 
 ```
 class BookProcessor(RESTProcessor):
@@ -289,13 +297,13 @@ class BookProcessor(RESTProcessor):
         ]
 ```
 
-* Create processor instance, Book is the django model class defined in your models.py
+* 创建一个该处理器的实例，参数Book为model，即models.py中的Book类
 
 ```
 book = BookProcessor(Book)
 ```
 
-* Use restEngine singleton instance instead of creating one
+* 将处理器注册到引擎上，对外起名为book
 
 ```
 restEngine.registerProcessor('book', book)
@@ -303,7 +311,7 @@ f = open('<path to>api_metadata.yaml')
 restEngine.loadMetadata(f)
 ```
 
-* Set logger or response headers if needed, for example
+* 可以给引擎设置log对象和返回response的通用header，如
 
 ```
 # logger is django object like, i.e. logger = logging.getLogger('default')
@@ -317,21 +325,20 @@ restEngine.setResponseHeader({
 })
 ```
 
-* Add entry point in urls.py
+* 增加一个处理所有restful api的入口，如urls.py中
+
 ```
 url(r'^api/(?P<path>.*)$', views.api, name='api'),
 ```
 
-and in views.py
-
+和views.py中
 ```
 @csrf_exempt
-@requireProcess(need_login=False)
 def api(request, path):
     return restEngine.handle(request, path)
 ```
 
-Demo api_metadata.yaml file
+定义的 api_metadata.yaml 文件如
 
 ```
 sets:
@@ -347,7 +354,7 @@ book:
     type: string
 ```
 
-Demo view file
+views.py 如
 
 ```
 from django.shortcuts import render
@@ -386,7 +393,6 @@ except Exception as e:
 
 
 @csrf_exempt
-@requireProcess(need_login=False)
 def api(request, path):
     return restEngine.handle(request, path)
 
