@@ -218,7 +218,6 @@ class Parser(object):
         fieldName = None
         value = None
         status.append('S')
-        finished = False
         while len(self.textStack) > 0 and status[-1] != 'E':
             node = self.textStack[-1]
             if status[-1] == 'S':
@@ -247,7 +246,6 @@ class Parser(object):
 
     def parseCondition(self, status):
         status.append('S')
-        finished = False
         left_result = None
         right_result = None
         operator = None
@@ -297,7 +295,6 @@ class Parser(object):
         status.pop()
         if operator and right_result:
             finalResult = ('andor', (operator, left_result, right_result))
-            # finalResult = (operator, left_result, right_result)
         else:
             finalResult = left_result
         while len(self.priorityStack) > 0:

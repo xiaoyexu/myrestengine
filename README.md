@@ -271,6 +271,47 @@ Function | Example | Comment
 \_pnum | entity?\_pnum=10 | Set 10 record for each page, default is 25
 \_count | entity?\_count | Only return count number
 
+
+## _query syntax
+In form of \<key\>=\"\<value\>\", value must be represented by single or double quotes 
+```
+name="abc"
+name='abc'
+age='20'
+```
+
+The filter string should be assigned to ``\_query``
+
+* , for and
+```
+users?\_query=name="Jerry",age="18"
+```
+
+* | for or
+```
+users?\_query=name="Jerry"|name="Mark"
+```
+
+* brackets for combination, without brackets, logic is built by order from left to right
+```
+users?\_query=name="Jerry"|name="Mark",age="18"    等价于name="Jerry"|(name="Mark",age="18") 
+users?\_query=(name="Jerry"|name="Mark"),age="18"  
+```
+
+* Operators
+
+Symbol | Sample | Coments 
+---|---|---
+% | name%"Jerry" | name contains Jerry without case sensitive <br> i.e django name__icontains
+!% | name!%"Jerry" | name doesn't contain Jerry, without case sensitive
+= | name="Jerry" | name equals to Jerry
+!= | name!="Jerry" | name not equal to Jerry
+< | age<"18" | age lower than 18 <br> i.e. django age__lt
+<= | age<="18" | age lower equal than 18 <br> i.e. django age__lte
+\> | age\>"18" | age greater than 18 <br> i.e. django age__gt
+>= | age>="18" | age greater equals than 18 <br> i.e. django age__gte
+@ | age@"18,30" | range age gte 18 and lte 30 <br> i.e. django age__gte and age__lte
+
 ## Usage in django project
 
 In the view where you want to define an api entry

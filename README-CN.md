@@ -270,13 +270,55 @@ def getListByKey(self, keys, expandName=None):
 
 保留的url上的参数名 `_query`, `_order`, `_skip`, `_top`, `_count`
 
-Function | Example | Comment
+参数 | 例子 | 含义
 ---|---|---
 \_query | entity?\_query=name="user" | 取所有name为"user"的记录<br/> 操作符有 =, !=, @, !@, %, !%, >, >=, <, <= <br/> @ 表示范围如 @"1,10" <br/> % 表示忽略大小写的包含，如 name%"xyz" (name 包含字符串 "xyz")
 \_order | entity?\_order=name,age | 排序字段，-(减号) 表示降序<br/> 如 \_order=-id
 \_page | entity?\_page=5 | 返回第5页数据
 \_pnum | entity?\_pnum=10 | 设置每页大小，默认为25
 \_count | entity?\_count | 只返回记录数
+
+
+## _query语法规则
+\<key\>=\"\<value\>\"形式，value 必须用单引号或双引号表示，如
+```
+name="abc"
+name='abc'
+age='20'
+```
+
+整个过滤表达式放在 ``\_query`` 中
+
+* 逗号(,)分隔表示 and，如
+```
+users?\_query=name="Jerry",age="18"
+```
+
+* 竖线(|)分隔表示 or，如
+```
+users?\_query=name="Jerry"|name="Mark"
+```
+
+* 括号用来保证运算优先级，否则以先序构造
+```
+users?\_query=name="Jerry"|name="Mark",age="18"    等价于name="Jerry"|(name="Mark",age="18") 
+users?\_query=(name="Jerry"|name="Mark"),age="18"  
+```
+
+* 操作符
+
+符号 | 例子 | 含义 
+---|---|---
+% | name%"Jerry" | name 包含字符串 Jerry，不区分大小写 <br> 对应django name__icontains
+!% | name!%"Jerry" | name 不包含字符串 Jerry，不区分大小写
+= | name="Jerry" | name 等于 Jerry
+!= | name!="Jerry" | name 不等于 Jerry
+< | age<"18" | age 小于 18 <br> 对应django age__lt
+<= | age<="18" | age 小于等于 18 <br> 对应django age__lte
+\> | age\>"18" | age 大于 18 <br> 对应django age__gt
+>= | age>="18" | age 小于等于 18 <br> 对应django age__gte
+@ | age@"18,30" | 范围 age 大于等于18小于等于30 <br> 对应django age__gte 和 age__lte
+
 
 ## 在Django项目中使用
 
