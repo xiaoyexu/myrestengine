@@ -381,7 +381,7 @@ class RESTEngine(object):
             'fastquery': request.GET.get('_fastquery', None),
             'expand': expandArray,
             'order': orderArray,
-            'page': request.GET.get('_page', None),
+            'page': request.GET.get('_page', 1),
             'pnum': request.GET.get('_pnum', 25),
             'count': count,
             'method': request.method

@@ -29,13 +29,21 @@ user:
 user:
   ...
   expand:
-  - roles
-  - orgs
+  - name: roles
+    type: roles
+  - name: organization
+    type: orgs
 ```
 In this case, implement ``getListByKey`` method in roles or orgs processor, e.g.
 ```    
 def getListByKey(self, keys, expandName=None):
         return Roles.objects.filter(user__id=keys['user']['id'])
+```
+
+name is used in ``expand`` and ``type`` refer to the name in ``sets`` in yaml file, the url looks like
+```
+user?_expand=roles
+user?_expand=organization
 ```
 
 ## Database table

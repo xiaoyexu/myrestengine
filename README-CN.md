@@ -32,13 +32,22 @@ user:
 user:
   ...
   expand:
-  - roles
-  - orgs
+  - name: roles
+    type: roles
+  - name: organization
+    type: orgs
 ```
+
 这种情况下，在roles和orgs处理类中实现 ``getListByKey`` 方法，如
 ```    
 def getListByKey(self, keys, expandName=None):
         return Roles.objects.filter(user__id=keys['user']['id'])
+```
+
+其中name定义 ``expand`` 的名字，而 ``type`` 是 yaml 文件中 sets 中的名字，url 形如
+```
+user?_expand=roles
+user?_expand=organization
 ```
 
 ## 数据库表
