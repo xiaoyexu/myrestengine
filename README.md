@@ -317,7 +317,7 @@ Symbol | Sample | Coments
 < | age<"18" | age lower than 18 <br> i.e. django age__lt
 <= | age<="18" | age lower equal than 18 <br> i.e. django age__lte
 \> | age\>"18" | age greater than 18 <br> i.e. django age__gt
->= | age>="18" | age greater equals than 18 <br> i.e. django age__gte
+\>= | age>="18" | age greater equals than 18 <br> i.e. django age__gte
 @ | age@"18,30" | range age gte 18 and lte 30 <br> i.e. django age__gte and age__lte
 
 ## Usage in django project

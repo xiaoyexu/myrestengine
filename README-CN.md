@@ -325,7 +325,7 @@ users?\_query=(name="Jerry"|name="Mark"),age="18"
 < | age<"18" | age 小于 18 <br> 对应django age__lt
 <= | age<="18" | age 小于等于 18 <br> 对应django age__lte
 \> | age\>"18" | age 大于 18 <br> 对应django age__gt
->= | age>="18" | age 小于等于 18 <br> 对应django age__gte
+\>= | age>="18" | age 小于等于 18 <br> 对应django age__gte
 @ | age@"18,30" | 范围 age 大于等于18小于等于30 <br> 对应django age__gte 和 age__lte
 
 
