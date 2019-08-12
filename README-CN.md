@@ -277,7 +277,7 @@ def getListByKey(self, keys, expandName=None):
 ```
 
 
-保留的url上的参数名 `_query`, `_order`, `_skip`, `_top`, `_count`
+保留的url上的参数名 `_query`, `_order`, `_page`, `_pnum`, `_count`
 
 参数 | 例子 | 含义
 ---|---|---
@@ -296,22 +296,22 @@ name='abc'
 age='20'
 ```
 
-整个过滤表达式放在 ``\_query`` 中
+整个过滤表达式放在 ``_query`` 中
 
 * 逗号(,)分隔表示 and，如
 ```
-users?\_query=name="Jerry",age="18"
+users?_query=name="Jerry",age="18"
 ```
 
 * 竖线(|)分隔表示 or，如
 ```
-users?\_query=name="Jerry"|name="Mark"
+users?_query=name="Jerry"|name="Mark"
 ```
 
 * 括号用来保证运算优先级，否则以先序构造
 ```
-users?\_query=name="Jerry"|name="Mark",age="18"    等价于name="Jerry"|(name="Mark",age="18") 
-users?\_query=(name="Jerry"|name="Mark"),age="18"  
+users?_query=name="Jerry"|name="Mark",age="18"    等价于name="Jerry"|(name="Mark",age="18") 
+users?_query=(name="Jerry"|name="Mark"),age="18"  
 ```
 
 * 操作符

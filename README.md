@@ -269,7 +269,7 @@ Or pure values without keyname, key order in metadata file will be used to map e
 ```
 
 
-Reserved url parameters are `_query`, `_order`, `_skip`, `_top`, `_count`
+Reserved url parameters are `_query`, `_order`, `_page`, `_pnum`, `_count`
 
 Function | Example | Comment
 ---|---|---
@@ -288,22 +288,22 @@ name='abc'
 age='20'
 ```
 
-The filter string should be assigned to ``\_query``
+The filter string should be assigned to ``_query``
 
 * , for and
 ```
-users?\_query=name="Jerry",age="18"
+users?_query=name="Jerry",age="18"
 ```
 
 * | for or
 ```
-users?\_query=name="Jerry"|name="Mark"
+users?_query=name="Jerry"|name="Mark"
 ```
 
 * brackets for combination, without brackets, logic is built by order from left to right
 ```
-users?\_query=name="Jerry"|name="Mark",age="18"    等价于name="Jerry"|(name="Mark",age="18") 
-users?\_query=(name="Jerry"|name="Mark"),age="18"  
+users?_query=name="Jerry"|name="Mark",age="18"    等价于name="Jerry"|(name="Mark",age="18") 
+users?_query=(name="Jerry"|name="Mark"),age="18"  
 ```
 
 * Operators
