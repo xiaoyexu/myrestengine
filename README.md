@@ -278,7 +278,7 @@ Function | Example | Comment
 \_page | entity?\_page=5 | Return record of page 5
 \_pnum | entity?\_pnum=10 | Set 10 record for each page, default is 25
 \_count | entity?\_count | Only return count number
-
+\_distinct | entity?\_distinct=name,age | Return distinct column values by given column name, delimited by comma 
 
 ## _query syntax
 In form of \<key\>=\"\<value\>\", value must be represented by single or double quotes 
@@ -312,6 +312,8 @@ Symbol | Sample | Coments
 ---|---|---
 % | name%"Jerry" | name contains Jerry without case sensitive <br> i.e django name__icontains
 !% | name!%"Jerry" | name doesn't contain Jerry, without case sensitive
+%% | name%"Jerry" | name contains Jerry with case sensitive <br> i.e django name__contains
+!%% | name!%"Jerry" | name doesn't contain Jerry, with case sensitive
 = | name="Jerry" | name equals to Jerry
 != | name!="Jerry" | name not equal to Jerry
 < | age<"18" | age lower than 18 <br> i.e. django age__lt

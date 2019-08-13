@@ -109,8 +109,10 @@ class Parser(object):
                 (2, '!='),  # not equal
                 (1, '@'),   # between
                 (2, '!@'),  # not between
-                (1, '%'),   # contains
-                (2, '!%'),  # not contains
+                (1, '%'),   # contains(not case sensitive)
+                (2, '!%'),  # not contains(not case sensitive)
+                (2, '%%'),  # contains(case sensitive)
+                (3, '!%%'), # not contains(case sensitive)
                 (1, '>'),   # great than
                 (1, '<'),   # less than
                 (2, '>='),  # great equal than
@@ -139,6 +141,12 @@ class Parser(object):
             if self.reader.peekNext() == ' ':
                 self.reader.skipBlank()
             else:
+                char3 = self.reader.peek(3)
+                (syntaxDef, pattern) = self.checkDefinition(self.syntax_definition, char3)
+                if syntaxDef:
+                    self.reader.read(3)
+                    self.textStack.insert(0, (syntaxDef, char3))
+                    continue
                 char2 = self.reader.peek(2)
                 (syntaxDef, pattern) = self.checkDefinition(self.syntax_definition, char2)
                 if syntaxDef:
@@ -162,35 +170,6 @@ class Parser(object):
                     self.textStack.insert(0, (varDef, word))
                     continue
                 self.raiseError('Scan error, char not allow', (None, self.reader.currentPosition))
-
-    def convertToStackbak(self):
-        self.reader.skipBlank()
-        while not self.reader.isEnd():
-            if self.reader.peekNext() == ' ':
-                self.reader.skipBlank()
-            elif self.reader.peekNext() == '"' or self.reader.peekNext() == '"':
-                word = self.reader.readStringVariable()
-                if word:
-                    self.textStack.insert(0, ('value', word))
-                else:
-                    word = self.reader.readStringPatternWord("""[\w"']""")
-                    self.textStack.insert(0, ('name', word))
-            elif self.reader.peek(2) == '!=' or self.reader.peek(2) == '>=' or self.reader.peek(
-                    2) == '<=' or self.reader.peek(2) == '!#':
-                word = self.reader.read(2)
-                self.textStack.insert(0, ('operator', word))
-            elif self.reader.peekNext() == '(' or self.reader.peekNext() == ')' or self.reader.peekNext() == ',' or self.reader.peekNext() == '|':
-                word = self.reader.readNext()
-                self.textStack.insert(0, ('condition', word))
-            elif self.reader.peekNext() == '@' or self.reader.peekNext() == '!' or self.reader.peekNext() == '@' or self.reader.peekNext() == '=':
-                word = self.reader.readNext()
-                self.textStack.insert(0, ('operator', word))
-            else:
-                word = self.reader.readStringPatternWord('\w')
-                if word:
-                    self.textStack.insert(0, ('name', word))
-                else:
-                    self.raiseError('Scan error', (None, self.reader.currentPosition))
 
     def raiseError(self, desc, node):
         raise Exception('%s at %s' % (desc, node[1]))

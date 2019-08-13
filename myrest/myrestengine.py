@@ -381,8 +381,9 @@ class RESTEngine(object):
             'fastquery': request.GET.get('_fastquery', None),
             'expand': expandArray,
             'order': orderArray,
-            'page': request.GET.get('_page', 1),
-            'pnum': request.GET.get('_pnum', 25),
+            'page': request.GET.get('_page', None),
+            'pnum': request.GET.get('_pnum', None),
+            'distinct': request.GET.get('_distinct', None),
             'count': count,
             'method': request.method
         }
@@ -654,7 +655,6 @@ class RESTProcessor(object):
         return None
 
     def getList(self, request, keys, **kwargs):
-        userContext = RESTEngine.getUserContext(request)
         query = self.getBaseQuery()
         if not query:
             query = Q()
@@ -669,6 +669,7 @@ class RESTProcessor(object):
                 query.add(q, Q.AND)
         djangoresult = None
         if keys:
+            # keys are given, must be expand items, filter result by keys
             expandName = kwargs.get('expandName', None)
             djangoresult = self.getListByKey(keys, expandName)
             if djangoresult and type(djangoresult) is not QuerySet:
@@ -676,12 +677,21 @@ class RESTProcessor(object):
         order = kwargs.get('order', [])
         order = tuple(order)
         if type(djangoresult) is QuerySet:
+            # Expand items
             djangoresult = djangoresult.filter(query).order_by(*order)
         else:
+            # Non-expand items
             djangoModel = self.getDjangoModelCls() if not self.__baseDjangoModel else self.__baseDjangoModel
             if not djangoModel:
                 raise InternalException('Model not defined')
             djangoresult = djangoModel.objects.filter(query).order_by(*order)
+        distinctColumns = kwargs.get('distinct', None)
+        if distinctColumns:
+            # Distinct columns if available
+            columnNames = distinctColumns.split(',')
+            djangoresult = djangoresult.values(*tuple(columnNames)).distinct()
+        if kwargs.get('count', False):
+            return djangoresult.count()
         if not djangoresult:
             return []
         page = kwargs.get('page', None)
@@ -695,13 +705,22 @@ class RESTProcessor(object):
                 pagingresult = paginator.page(1)
             except EmptyPage:
                 pagingresult = paginator.page(paginator.num_pages)
-        if kwargs.get('count', False):
-            return len(pagingresult)
-        finalresult = []
-        for r in pagingresult:
-            record = self.convertData(r, None)
-            finalresult.append(record)
-        return finalresult
+        if distinctColumns:
+            # Wrapper result by distinct column names
+            finalresult = []
+            for r in pagingresult:
+                j = {}
+                for n in columnNames:
+                    j[n] = r[n]
+                finalresult.append(j)
+            return finalresult
+        else:
+            # Normal result wrapping
+            finalresult = []
+            for r in pagingresult:
+                record = self.convertData(r, None)
+                finalresult.append(record)
+            return finalresult
 
     def getSingle(self, request, keys):
         djangoModel = self.getDjangoModelCls() if not self.__baseDjangoModel else self.__baseDjangoModel
@@ -717,7 +736,6 @@ class RESTProcessor(object):
         if baseQ:
             q.add(baseQ, Q.AND)
         model = djangoModel.objects.get(q)
-        userContext = RESTEngine.getUserContext(request)
         record = self.convertData(model, None)
         return record
 
@@ -784,6 +802,12 @@ class RESTProcessor(object):
             q.add(Q(**{conKey: low}), ao)
         elif opt == '!%':
             conKey = ''.join([fieldname, '__icontains'])
+            q.add(~Q(**{conKey: low}), ao)
+        elif opt == '%%':
+            conKey = ''.join([fieldname, '__contains'])
+            q.add(Q(**{conKey: low}), ao)
+        elif opt == '!%%':
+            conKey = ''.join([fieldname, '__contains'])
             q.add(~Q(**{conKey: low}), ao)
         elif opt == '=':
             q.add(Q(**{conKey: low}), ao)

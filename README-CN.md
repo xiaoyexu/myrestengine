@@ -277,7 +277,7 @@ def getListByKey(self, keys, expandName=None):
 ```
 
 
-保留的url上的参数名 `_query`, `_order`, `_page`, `_pnum`, `_count`
+保留的url上的参数名 `_query`, `_order`, `_page`, `_pnum`, `_count`, `_distinct`
 
 参数 | 例子 | 含义
 ---|---|---
@@ -286,6 +286,7 @@ def getListByKey(self, keys, expandName=None):
 \_page | entity?\_page=5 | 返回第5页数据
 \_pnum | entity?\_pnum=10 | 设置每页大小，默认为25
 \_count | entity?\_count | 只返回记录数
+\_distinct | entity?\_distinct=name,age | 返回指定列的distinct记录，多列用逗号分隔
 
 
 ## _query语法规则
@@ -320,6 +321,8 @@ users?_query=(name="Jerry"|name="Mark"),age="18"
 ---|---|---
 % | name%"Jerry" | name 包含字符串 Jerry，不区分大小写 <br> 对应django name__icontains
 !% | name!%"Jerry" | name 不包含字符串 Jerry，不区分大小写
+%% | name%%"Jerry" | name 包含字符串 Jerry，区分大小写 <br> 对应django name__contains
+!%% | name!%%"Jerry" | name 不包含字符串 Jerry，区分大小写
 = | name="Jerry" | name 等于 Jerry
 != | name!="Jerry" | name 不等于 Jerry
 < | age<"18" | age 小于 18 <br> 对应django age__lt
