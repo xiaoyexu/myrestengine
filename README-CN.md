@@ -18,14 +18,20 @@ users: user
 * `实体单体` 将定义其中的字段、成员，如下user包含主键(key)为name，类型为int，字段有firstname，类型string
 ```
 user:
+  deletable: true
+  creatable: true
+  updatable: true
   key:
   - name: id
-  - type: int
+    type: int
   property:
   - name: firstName
-  - type: string
+    type: string
+    updatable: true
   ...
 ```
+
+* 含有 `deletable`,`creatable`,`updatable` 为 `true` 的实体分别可执行删除、创建、修改操作，标记实体为`updatable`时，还需标注字段级别是否可修改
 
 * `expand` 定义该实体可扩展到的其他实体, 即相关记录，如下表示user可有对应相关的roles（角色）和orgs（组织）
 ```
@@ -56,14 +62,14 @@ user?_expand=organization
 
 1. createdAt
 2. updatedAt
-3. deleteFlag
+3. deleted
 
 即
 
 ```
 createdAt = models.DateTimeField(auto_now_add=True, verbose_name=u"CreatedAt")
 updatedAt = models.DateTimeField(auto_now=True, verbose_name=u"UpdatedAt")
-deleteFlag = models.BooleanField(default=False, verbose_name=u"Deleted")
+deleted = models.BooleanField(default=False, verbose_name=u"Deleted")
 ```
 
 ## 处理器（Processor）
@@ -190,65 +196,15 @@ def getListByKey(self, keys, expandName=None):
     ```
     上面这个函数接受json中parentId的值，作为id，找到BookComment model，设置到对应实体中，名为parentComment
 
- 3. 修改记录操作.
+ 3. 修改记录操作
 
-    覆盖 getModelByKey 方法，如
-
-    ```
-    def getModelByKey(self, keys):
-        return Chapter.objects.get(id=keys['chapter']['id'])
-    ```
-
-    在yaml文件中标记位 `updatable` 为 true 的字段会被修改和保存.
-
-    或者对于复杂逻辑，覆盖 getPutModel 方法令其返回None
-
-    ```
-    def getPutModel(keys):
-        return None
-    ```
-
-    然后实现 put 方法，如
-
-    ```
-    def put(self, request, keys):
-        key = keys['user'][id]
-        jsonBody = request.jsonBody
-        firstName = jsonBody.get('firstName', None)
-        # update user
-        user = User.objects.get(id=key)
-        user.firstName = firstName
-        user.save()
-        return {}
-    ```
+    在yaml文件中标记实体为 `updatable`， 然后将需要更新的字段也同样标记上
 
  4. 删除实体操作
  
-    覆盖 `getModelByKey(self, keys)`，如
-    ```
-    def getModelByKey(self, keys):
-        return BookComment.objects.get(id=keys['bookcomment']['id'])
-    ```
-    
-    或者覆盖 `getDeleteModel(self, keys)` 和 `delete(self, request, keys)` 方法
+    在yaml文件中标记实体为 `deletable` 即可
 
-    ```
-    def getDeleteModel(keys):
-        return None
-    ```
-
-    和
-
-    ```
-    def delete(request, keys):
-        key = keys['user']['id']
-        user = User.objects.get(id=key)
-        user.valid = False
-        user.save()
-        return {}
-    ```
-
-    如果model上有一个deleteFlag，那么会将其设置为True，否则使用model.delete()删除
+    如果model上有一个deleted，那么会将其设置为True，否则使用model.delete()删除
 
 ## API 参考
 
@@ -277,17 +233,34 @@ def getListByKey(self, keys, expandName=None):
 ```
 
 
-保留的url上的参数名 `_query`, `_order`, `_page`, `_pnum`, `_count`, `_distinct`
+保留的url上的参数名 `_query`, `_fastquery`, `_order`, `_page`, `_pnum`, `_count`, `_distinct`
 
 参数 | 例子 | 含义
 ---|---|---
 \_query | entity?\_query=name="user" | 取所有name为"user"的记录<br/> 操作符有 =, !=, @, !@, %, !%, >, >=, <, <= <br/> @ 表示范围如 @"1,10" <br/> % 表示忽略大小写的包含，如 name%"xyz" (name 包含字符串 "xyz")
+\_fastquery | entity?\_fastquery="Jerry" | 使用自定义的多字段搜索
 \_order | entity?\_order=name,age | 排序字段，-(减号) 表示降序<br/> 如 \_order=-id
 \_page | entity?\_page=5 | 返回第5页数据
 \_pnum | entity?\_pnum=10 | 设置每页大小，默认为25
 \_count | entity?\_count | 只返回记录数
 \_distinct | entity?\_distinct=name,age | 返回指定列的distinct记录，多列用逗号分隔
 
+
+可重定义参数名，使用 `setParameterName`
+
+```
+restEngine = myrestengine.RESTEngine()
+restEngine.setParameterName({
+    "_query": "q",
+    "_fastquery": "fq",
+    "_expand": "exp",
+    "_order": "o",
+    "_page": "page",
+    "_pnum": "size",
+    "_distinct": "d",
+    "_count": "c"
+})
+```
 
 ## _query语法规则
 \<key\>=\"\<value\>\"形式，value 必须用单引号或双引号表示，如
@@ -330,6 +303,80 @@ users?_query=(name="Jerry"|name="Mark"),age="18"
 \> | age\>"18" | age 大于 18 <br> 对应django age__gt
 \>= | age>="18" | age 小于等于 18 <br> 对应django age__gte
 @ | age@"18,30" | 范围 age 大于等于18小于等于30 <br> 对应django age__gte 和 age__lte
+
+* 返回结果
+
+实体集合，默认返回为数组，如
+
+```
+[{
+  "name": "Tom",
+  "age": 18
+},
+{
+  "name": "Jerry",
+  "age": 18
+}]
+```
+
+单个实体，默认返回为字典，如
+
+```
+{
+  "name": "Tom",
+  "age": 18
+}
+```
+
+* 自定义query转换
+如需转换query格式，可覆盖 `customizedQueryParser`，如前端框架可能产生url
+```
+?page=1&size=3&filters[0][field]=name&filters[0][type]=like&filters[0][value]=x
+```
+
+可自定义转换，如
+
+```
+def customizedQueryParser(self, request, params):
+    i = 0
+    q = []
+    while request.GET.get('filters[%d][field]' % i, None) is not None:
+        field = request.GET.get('filters[%d][field]' % i, None)
+        type = request.GET.get('filters[%d][type]' % i, None)
+        value = request.GET.get('filters[%d][value]' % i, None)
+        q.append("""%s%%'%s'""" % (field, value))
+        i += 1
+    return ','.join(q)
+```
+
+* 自定义返回结构
+
+如需变更集合返回结构，可覆盖 `customizedListResponse` 方法，如
+
+```
+def customizedListResponse(self, data, **kwargs):
+    return {
+        "data": data,
+        "max_pages": kwargs['maxPages']
+    }
+```
+
+这样，返回结果如
+
+
+```
+{
+  "data": [{
+      "name": "Tom",
+      "age": 18
+    },
+    {
+      "name": "Jerry",
+      "age": 18
+    }],
+  "max_pages": 1
+}
+```
 
 
 ## 在Django项目中使用

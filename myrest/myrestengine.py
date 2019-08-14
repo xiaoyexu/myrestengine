@@ -43,6 +43,10 @@ class ParameterErrorException(BadRequestException):
     pass
 
 
+class ValidationErrorException(BadRequestException):
+    pass
+
+
 class CreateErrorException(BadRequestException):
     pass
 
@@ -62,9 +66,66 @@ class ReadErrorException(BadRequestException):
 class MetadataUtil(object):
     def __init__(self, metadata):
         self.metadata = yaml.load(metadata)
+        self.fieldCache = {}
+        self.keyFieldCache = {}
+        self.mandatoryFeildCache = {}
+        self.updatableFieldCache = {}
+        self.deletableCache = {}
+        self.creatableCache = {}
+        self.updatableCache = {}
+
+        for k, v in self.metadata.get('sets', {}).items():
+            entity = self.metadata.get(v, {})
+            self.fieldCache.setdefault(v, {})
+            self.keyFieldCache.setdefault(v, {})
+            self.mandatoryFeildCache.setdefault(v, [])
+            self.updatableFieldCache.setdefault(v, [])
+            for item in entity.get('key', []):
+                self.fieldCache[v][item['name']] = item
+                self.keyFieldCache[v][item['name']] = item
+                if not item.get('nullable', True):
+                    self.mandatoryFeildCache[v].append(item['name'])
+            properties = entity.get('property', [])
+            for item in properties:
+                self.fieldCache[v][item['name']] = item
+                if not item.get('nullable', True):
+                    self.mandatoryFeildCache[v].append(item['name'])
+                if item.get('updatable', False):
+                    self.updatableFieldCache[v].append(item['name'])
+            self.deletableCache.setdefault(v, bool(entity.get('deletable', False)))
+            self.creatableCache.setdefault(v, bool(entity.get('creatable', False)))
+            self.updatableCache.setdefault(v, bool(entity.get('updatable', False)))
+
+    def getFieldDef(self, entityName, fieldName):
+        cache = self.fieldCache.get(entityName, None)
+        return cache.get(fieldName, None) if cache else None
+
+    def getMandatoryFields(self, entityName):
+        return self.mandatoryFeildCache[entityName]
 
     def getEntityDef(self, entityName):
         return self.metadata.get(entityName, None)
+
+    def isKeyField(self, entityName, fieldName):
+        cache = self.keyFieldCache.get(entityName, None)
+        if cache.get(fieldName, None):
+            return True
+        return False
+
+    def isFieldUpdatable(self, entityName, fieldName):
+        cache = self.updatableFieldCache.get(entityName, None)
+        if fieldName in cache:
+            return True
+        return False
+
+    def isEntityDeletable(self, entityName):
+        return self.deletableCache.get(entityName, False)
+
+    def isEntityCreatable(self, entityName):
+        return self.creatableCache.get(entityName, False)
+
+    def isEntityUpdatable(self, entityName):
+        return self.updatableCache.get(entityName, False)
 
     def getKeyFieldDef(self, entityName, keyName=None):
         entityDef = self.getEntityDef(entityName)
@@ -203,6 +264,18 @@ class XmlConvert(object):
 class RESTEngine(object):
     __restApps = {}
     __metadataUtil = None
+    # Default parameter names
+    __parameterNames = {
+        '_query': '_query',
+        '_count': '_count',
+        '_expand': '_expand',
+        '_order': '_order',
+        '_fastquery': '_fastquery',
+        '_page': '_page',
+        '_pnum': '_pnum',
+        '_distinct': '_distinct'
+
+    }
     CONTENT_TYPE_JSON = 'application/json'
     CONTENT_TYPE_XML = 'application/xml'
     CONTENT_TYPE_TEXT = 'text/html'
@@ -211,6 +284,9 @@ class RESTEngine(object):
 
     def __init__(self):
         pass
+
+    def setParameterName(self, params):
+        self.__parameterNames.update(params)
 
     def registerProcessor(self, entityName, processor):
         processor.setEngine(self)
@@ -370,20 +446,20 @@ class RESTEngine(object):
                 raise ParameterErrorException('content type not allow')
 
     def __convertGETparameter(self, request):
-        expand = request.GET.get('_expand', None)
+        expand = request.GET.get(self.__parameterNames['_expand'], None)
         expandArray = [x.strip() for x in expand.split(',')] if expand else []
-        order = request.GET.get('_order', None)
+        order = request.GET.get(self.__parameterNames['_order'], None)
         orderArray = [x.strip() for x in order.split(',')] if order else []
-        count = request.GET.get('_count', None)
+        count = request.GET.get(self.__parameterNames['_count'], None)
         count = True if count == '' else False
         params = {
-            'query': request.GET.get('_query', None),
-            'fastquery': request.GET.get('_fastquery', None),
+            'query': request.GET.get(self.__parameterNames['_query'], None),
+            'fastquery': request.GET.get(self.__parameterNames['_fastquery'], None),
             'expand': expandArray,
             'order': orderArray,
-            'page': request.GET.get('_page', None),
-            'pnum': request.GET.get('_pnum', None),
-            'distinct': request.GET.get('_distinct', None),
+            'page': request.GET.get(self.__parameterNames['_page'], None),
+            'pnum': request.GET.get(self.__parameterNames['_pnum'], None),
+            'distinct': request.GET.get(self.__parameterNames['_distinct'], None),
             'count': count,
             'method': request.method
         }
@@ -417,8 +493,10 @@ class RESTEngine(object):
         if regItem.group(2):
             keysString = regItem.group(2)[1:-1]
             keysArray = keysString.split(',')
+            keyDefs = self.__metadataUtil.getKeyFieldDef(entityName)
+            if len(keysArray) != len(keyDefs):
+                raise ParameterErrorException('key fields length mismatch')
             if len(keysArray) == 1:
-                keyDefs = self.__metadataUtil.getKeyFieldDef(entityName)
                 if len(keyDefs) != 1:
                     raise ParameterErrorException('Number of key field mismatch')
                 value = self.__metadataUtil.checkFieldValueByType(keysArray[0], keyDefs[0]['type'])
@@ -446,7 +524,6 @@ class RESTEngine(object):
 
                     keyPairs = reduce(lambda x, y: x.update(y) or x, list(map(mapKey, keysArray)))
                 elif pattern == 2:
-                    keysDef = self.__metadataUtil.getKeyFieldDef(entityName)
 
                     def mapKey(x, y):
                         x = x.strip()
@@ -455,7 +532,7 @@ class RESTEngine(object):
                             raise ParameterErrorException('Wrong key value')
                         return {y['name']: x}
 
-                    keyPairs = reduce(lambda x, y: x.update(y) or x, list(map(mapKey, keysArray, keysDef)))
+                    keyPairs = reduce(lambda x, y: x.update(y) or x, list(map(mapKey, keysArray, keyDefs)))
 
                 keys[entityName] = keyPairs
             queryType = "single"
@@ -574,8 +651,7 @@ class RESTProcessor(object):
     def __populateToJson(self, jsonDict, djangoModel, fields):
         for field in fields:
             if type(field) is tuple:
-                jfield = field[0]
-                mfield = field[1]
+                jfield, mfield = field[0], field[1]
             else:
                 mfield = jfield = field
             if callable(mfield):
@@ -590,12 +666,63 @@ class RESTProcessor(object):
                 jsonDict[jfield] = value
         return jsonDict
 
+    def __populateToModel(self, jsonDict, djangoModel, fields, usage):
+        for field in fields:
+            custCall = False
+            if type(field) is tuple:
+                jfield, mfield = field[0], field[1]
+            else:
+                mfield = jfield = field
+            if usage == 'UPDATE':
+                # Ignore key field and non-updatable fields
+                if self.__engine.getMetadataUtil().isKeyField(self.getBindEntityName(), jfield) \
+                        or not self.__engine.getMetadataUtil().isFieldUpdatable(self.getBindEntityName(), jfield):
+                    continue
+            value = jsonDict.get(jfield, None)
+            if value is None:
+                continue
+            if callable(mfield):
+                result = mfield(djangoModel, jsonDict[jfield])
+                if result is None:
+                    continue
+                else:
+                    (mfield, value) = result
+                    custCall = True
+            elif type(mfield) is dict:
+                value = mfield.get('value', None)
+            if type(value) is datetime.datetime:
+                value = self.__formatDateTime(value)
+            if value is not None:
+                if custCall:
+                    exec("djangoModel.%s=value" % mfield)
+                else:
+                    fieldType = self.__engine.getMetadataUtil().getProperyFeildDef(self.getBindEntityName(),
+                                                                                   jfield).get(
+                        'type', None)
+                    if fieldType in ['int', 'boolean', 'float']:
+                        exec("djangoModel.%s=%s" % (mfield, value))
+                    else:
+                        exec("djangoModel.%s='%s'" % (mfield, value))
+
+    def __validateEntity(self, json, entityInfo):
+        """Validate json request entity against metadata definition"""
+        entityName = entityInfo.get('entityName', None)
+        mandatoryFields = self.__engine.getMetadataUtil().getMandatoryFields(entityName)
+        for f in mandatoryFields:
+            if f not in json.keys():
+                raise ValidationErrorException("Field %s is not nullable" % f)
+
+    def customizedQueryParser(self, request, params):
+        query = params.get('query', None)
+        return query
+
     def handle_http_request(self, request, params, keys, entityInfo):
         result = None
         queryType = entityInfo.get('queryType', None)
         if request.method == 'GET':
             expandArray = params.get('expand', [])
-            query = params.get('query', None)
+            # query = params.get('query', None)
+            query = self.customizedQueryParser(request, params)
             entityName = entityInfo.get('entityName', None)
             self.__validateExpandItem(entityName, expandArray)
             if queryType == 'single':
@@ -626,21 +753,66 @@ class RESTProcessor(object):
         elif request.method == 'HEAD':
             result = self.head(request)
         elif request.method == 'POST':
-            result = self.post(request)
+            if not self.__engine.getMetadataUtil().isEntityCreatable(self.getBindEntityName()):
+                raise CreateErrorException('Create error: Not creatable')
+            self.__validateEntity(request.jsonBody, entityInfo)
+            self.postValidation(request.jsonBody)
+            try:
+                model = self.getNewModel()
+                if model:
+                    self.convertModel(request.jsonBody, model, 'CREATE')
+                    model.save()
+                    result = self.convertData(model, None)
+                else:
+                    result = self.post(request)
+            except Exception as e:
+                raise CreateErrorException('Create error: %s' % str(e))
+                # result = self.post(request)
         elif request.method == 'PUT':
+            if not self.__engine.getMetadataUtil().isEntityUpdatable(self.getBindEntityName()):
+                raise UpdateErrorException('Update error: Not updatable')
             if not keys:
                 raise ParameterErrorException('Missing key')
-            result = self.put(request, keys)
+            self.__validateEntity(request.jsonBody, entityInfo)
+            self.putValidation(request.jsonBody)
+            try:
+                model = self.getPutModel(keys)
+                if model:
+                    self.convertModel(request.jsonBody, model, 'UPDATE')
+                    model.save()
+                    return {}
+                else:
+                    result = self.put(request, keys)
+            except Exception as e:
+                raise UpdateErrorException('Update error: %s' % str(e))
+            # result = self.put(request, keys)
         elif request.method == 'DELETE':
             if not keys:
                 raise ParameterErrorException('Missing key')
-            result = self.delete(request, keys)
+            if not self.__engine.getMetadataUtil().isEntityDeletable(self.getBindEntityName()):
+                raise DeleteErrorException('Delete error: Not deletable')
+            try:
+                model = self.getDeleteModel(keys)
+                if model:
+                    if hasattr(model, 'deleted'):
+                        model.deleted = True
+                        model.save()
+                    else:
+                        model.delete()
+                    result = {}
+                # else:
+                #     result = self.delete(request, keys)
+            except Exception as e:
+                raise DeleteErrorException('Delete error: %s' % str(e))
         else:
             raise NotImplementedException('')
         return self.postProcessResult(result, queryType, request.method)
 
     def getBaseQuery(self):
         return None
+
+    def getNewModel(self):
+        return self.getBaseDjangoModel()()
 
     def getFastQuery(self, text):
         return None
@@ -651,8 +823,14 @@ class RESTProcessor(object):
     def getBaseDjangoModel(self):
         return self.__baseDjangoModel
 
+    def __getDjangoModel(self):
+        return self.getDjangoModelCls() if not self.__baseDjangoModel else self.__baseDjangoModel
+
     def getListByKey(self, keys, expandName=None):
         return None
+
+    def customizedListResponse(self, data, maxPages):
+        return data
 
     def getList(self, request, keys, **kwargs):
         query = self.getBaseQuery()
@@ -681,7 +859,7 @@ class RESTProcessor(object):
             djangoresult = djangoresult.filter(query).order_by(*order)
         else:
             # Non-expand items
-            djangoModel = self.getDjangoModelCls() if not self.__baseDjangoModel else self.__baseDjangoModel
+            djangoModel = self.__getDjangoModel()
             if not djangoModel:
                 raise InternalException('Model not defined')
             djangoresult = djangoModel.objects.filter(query).order_by(*order)
@@ -692,8 +870,6 @@ class RESTProcessor(object):
             djangoresult = djangoresult.values(*tuple(columnNames)).distinct()
         if kwargs.get('count', False):
             return djangoresult.count()
-        if not djangoresult:
-            return []
         page = kwargs.get('page', None)
         pnum = kwargs.get('pnum', None)
         pagingresult = djangoresult
@@ -705,6 +881,7 @@ class RESTProcessor(object):
                 pagingresult = paginator.page(1)
             except EmptyPage:
                 pagingresult = paginator.page(paginator.num_pages)
+        maxPages = paginator.num_pages
         if distinctColumns:
             # Wrapper result by distinct column names
             finalresult = []
@@ -720,10 +897,10 @@ class RESTProcessor(object):
             for r in pagingresult:
                 record = self.convertData(r, None)
                 finalresult.append(record)
-            return finalresult
+            return self.customizedListResponse(finalresult, maxPages)
 
     def getSingle(self, request, keys):
-        djangoModel = self.getDjangoModelCls() if not self.__baseDjangoModel else self.__baseDjangoModel
+        djangoModel = self.__getDjangoModel()
         if not djangoModel:
             raise InternalException('Model not defined')
         key = self.__getSelfKey(keys)
@@ -739,14 +916,42 @@ class RESTProcessor(object):
         record = self.convertData(model, None)
         return record
 
+    def getModelByKey(self, keys):
+        keySets = keys.get(self.__bindEntityName, None)
+        if keySets:
+            # Build filter with key
+            q = Q()
+            for k, v in keySets.items():
+                q.add(self.buildQobject(k, '=', v), Q.AND)
+            djangoModel = self.__getDjangoModel()
+            dm = djangoModel.objects.filter(q)
+            if dm:
+                return dm[0]
+            else:
+                return None
+        else:
+            return None
+
+    def postValidation(self, json):
+        pass
+
     def post(self, request):
         raise NotImplementedException("Not Implemented")
+
+    def putValidation(self, json):
+        pass
 
     def put(self, request, keys):
         raise NotImplementedException("Not Implemented")
 
+    def getPutModel(self, keys):
+        return self.getModelByKey(keys)
+
     def head(self, request):
         return {}
+
+    def getDeleteModel(self, keys):
+        return self.getModelByKey(keys)
 
     def delete(self, request, keys):
         raise NotImplementedException("Not Implemented")
@@ -769,6 +974,28 @@ class RESTProcessor(object):
             self.__populateToJson(record, model, mapping)
             return record
         return {}
+
+    def getPopulateModelMapping(self):
+        """
+        Array list contains field name, each object can be:
+        1. Simple string. e.g. 'name' -> get name from json dictionary and set to model(model.name = json['name'])
+        2. Tuple object, e.g. ('name', 'nickname') -> get name from json dictionary and set to model(model.nickname = json['name'])
+        3. Tuple object with function, e.g. ('name', lambda model, value: ('name', 'new' + value)), call function to get parsed value, function must return turple like:
+           ('fieldname', value)
+        4. Tuple object with alias name and function, e.g. ('name', lambda model, value: ('nickname', 'new'+value))
+        5. No return result, can be a pure function and set model like:
+            def __setName(model, value):
+                model.name = getByValue(value)
+                return None
+        :return:
+        """
+        return None
+
+    def convertModel(self, json, model, usage):
+        mapping = self.getPopulateModelMapping()
+        if mapping:
+            self.__populateToModel(json, model, mapping, usage)
+        return model
 
     def parseToQObject(self, conditions):
         opt = conditions.get('opt', None)

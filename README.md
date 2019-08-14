@@ -15,14 +15,20 @@ users: user
 * `<entity name>` define entity and it's property, e.g
 ```
 user:
+  deletable: true
+  creatable: true
+  updatable: true
   key:
   - name: id
-  - type: int
+    type: int
   property:
   - name: firstName
-  - type: string
+    type: string
+    updatable: true
   ...
 ```
+
+* `deletable`,`creatable`,`updatable` with value `true` indicates whether the entity can be deleted created or updated, for entity makred as updatable, you need to mark on field level as well
 
 * `expand` define the allowed navigation entity, allow navigate from user entity to roles and orgs entity set e.g.
 ```
@@ -52,14 +58,14 @@ Recommend to have below 3 fields for all django models
 
 1. createdAt
 2. updatedAt
-3. deleteFlag
+3. deleted
 
 e.g.
 
 ```
 createdAt = models.DateTimeField(auto_now_add=True, verbose_name=u"CreatedAt")
 updatedAt = models.DateTimeField(auto_now=True, verbose_name=u"UpdatedAt")
-deleteFlag = models.BooleanField(default=False, verbose_name=u"Deleted")
+deleted = models.BooleanField(default=False, verbose_name=u"Deleted")
 ```
 
 ## Processor
@@ -186,62 +192,13 @@ def getListByKey(self, keys, expandName=None):
 
  3. Method put defines logic when request method is PUT.
 
-    Overwrite getModelByKey method(will be used for updating and deleting)
-
-    ```
-    def getModelByKey(self, keys):
-        return Chapter.objects.get(id=keys['chapter']['id'])
-    ```
-
-    All fields marked with `updatable` with value true will be updated and saved.
-
-    Alternatively, for complex and custimzing logic, overwrite getPutModel method to return None
-
-    ```
-    def getPutModel(keys):
-        return None
-    ```
-
-    Then overwrite put method like
-
-    ```
-    def put(self, request, keys):
-        key = keys['user'][id]
-        jsonBody = request.jsonBody
-        firstName = jsonBody.get('firstName', None)
-        # update user
-        user = User.objects.get(id=key)
-        user.firstName = firstName
-        user.save()
-        return {}
-    ```
+    In yaml file, mark entity as `updatable`, as well as fields that need to be updated
 
  4. Method delete defines logic when request method is DELETE, either overwrite `getDeleteModel(self, keys)` and `delete(self, request, keys)` method, e.g.
 
-    ```
-    def getDeleteModel(keys):
-        return None
-    ```
+    In yaml file, mark entity as `deletable`
 
-    And
-
-    ```
-    def delete(request, keys):
-        key = keys['user']['id']
-        user = User.objects.get(id=key)
-        user.valid = False
-        user.save()
-        return {}
-    ```
-
-    or do nothing if already defined `getModelByKey`, e.g.
-
-    ```
-    def getModelByKey(self, keys):
-        return BookComment.objects.get(id=keys['bookcomment']['id'])
-    ```
-
-    If model has a column "deleteFlag", then this flag will be set to True and saved, otherwise record will be deleted from database, by call model.delete()
+    If model has a column "deleted", then this flag will be set to True and saved, otherwise record will be deleted from database, by call model.delete()
 
 ## API Reference
 
@@ -269,16 +226,33 @@ Or pure values without keyname, key order in metadata file will be used to map e
 ```
 
 
-Reserved url parameters are `_query`, `_order`, `_page`, `_pnum`, `_count`
+Reserved url parameters are `_query`,`_fastquery`, `_order`, `_page`, `_pnum`, `_count`
 
 Function | Example | Comment
 ---|---|---
 \_query | entity?\_query=name="user" | Filter name equals "user".<br/> operator can be =, !=, @, !@, %, !%, >, >=, <, <= <br/> @ means ranges, e.g.  @"1,10" <br/> % means contains ignore case, e.g name%"xyz" (name contains "xyz")
+\_fastquery | entity?\_fastquery="Jerry" | Customized text query 
 \_order | entity?\_order=name,age | sort result by column, add -(minus) for descending sorting <br/> e.g. \_order=-id
 \_page | entity?\_page=5 | Return record of page 5
 \_pnum | entity?\_pnum=10 | Set 10 record for each page, default is 25
 \_count | entity?\_count | Only return count number
 \_distinct | entity?\_distinct=name,age | Return distinct column values by given column name, delimited by comma 
+
+You may re-define the parameter name by `setParameterName`
+
+```
+restEngine = myrestengine.RESTEngine()
+restEngine.setParameterName({
+    "_query": "q",
+    "_fastquery": "fq",
+    "_expand": "exp",
+    "_order": "o",
+    "_page": "page",
+    "_pnum": "size",
+    "_distinct": "d",
+    "_count": "c"
+})
+```
 
 ## _query syntax
 In form of \<key\>=\"\<value\>\", value must be represented by single or double quotes 
@@ -321,6 +295,80 @@ Symbol | Sample | Coments
 \> | age\>"18" | age greater than 18 <br> i.e. django age__gt
 \>= | age>="18" | age greater equals than 18 <br> i.e. django age__gte
 @ | age@"18,30" | range age gte 18 and lte 30 <br> i.e. django age__gte and age__lte
+
+* Return result
+
+Entity list return as arrary
+
+```
+[{
+  "name": "Tom",
+  "age": 18
+},
+{
+  "name": "Jerry",
+  "age": 18
+}]
+```
+
+Single entity return as dictionary
+
+```
+{
+  "name": "Tom",
+  "age": 18
+}
+```
+
+* Customize query format
+Overwrite `customizedQueryParser`, in caes frontend framework generate url like
+```
+?page=1&size=3&filters[0][field]=name&filters[0][type]=like&filters[0][value]=x
+```
+
+Define format function as
+
+```
+def customizedQueryParser(self, request, params):
+    i = 0
+    q = []
+    while request.GET.get('filters[%d][field]' % i, None) is not None:
+        field = request.GET.get('filters[%d][field]' % i, None)
+        type = request.GET.get('filters[%d][type]' % i, None)
+        value = request.GET.get('filters[%d][value]' % i, None)
+        q.append("""%s%%'%s'""" % (field, value))
+        i += 1
+    return ','.join(q)
+```
+
+* Customize return structure
+
+Overwrite `customizedListResponse` 
+
+```
+def customizedListResponse(self, data, **kwargs):
+    return {
+        "data": data,
+        "max_pages": kwargs['maxPages']
+    }
+```
+
+In this case, result will be
+
+```
+{
+  "data": [{
+      "name": "Tom",
+      "age": 18
+    },
+    {
+      "name": "Jerry",
+      "age": 18
+    }],
+  "max_pages": 1
+}
+```
+
 
 ## Usage in django project
 
