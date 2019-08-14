@@ -829,7 +829,7 @@ class RESTProcessor(object):
     def getListByKey(self, keys, expandName=None):
         return None
 
-    def customizedListResponse(self, data, maxPages):
+    def customizedListResponse(self, data, **kwargs):
         return data
 
     def getList(self, request, keys, **kwargs):
@@ -872,6 +872,7 @@ class RESTProcessor(object):
             return djangoresult.count()
         page = kwargs.get('page', None)
         pnum = kwargs.get('pnum', None)
+        maxPages = 1
         pagingresult = djangoresult
         if page:
             paginator = Paginator(djangoresult, pnum)
@@ -881,7 +882,7 @@ class RESTProcessor(object):
                 pagingresult = paginator.page(1)
             except EmptyPage:
                 pagingresult = paginator.page(paginator.num_pages)
-        maxPages = paginator.num_pages
+            maxPages = paginator.num_pages
         if distinctColumns:
             # Wrapper result by distinct column names
             finalresult = []
@@ -897,7 +898,7 @@ class RESTProcessor(object):
             for r in pagingresult:
                 record = self.convertData(r, None)
                 finalresult.append(record)
-            return self.customizedListResponse(finalresult, maxPages)
+            return self.customizedListResponse(finalresult, **{"maxPages": maxPages})
 
     def getSingle(self, request, keys):
         djangoModel = self.__getDjangoModel()
