@@ -8,7 +8,7 @@ from django.db.models.query import QuerySet
 from django.core.exceptions import *
 from django.core.paginator import Paginator, PageNotAnInteger, EmptyPage
 from functools import reduce
-import random, re, pickle, yaml, base64, json, time, datetime
+import random, re, pickle, yaml, base64, json, time, datetime, math
 
 VERSION = '20190809'
 
@@ -276,6 +276,10 @@ class RESTEngine(object):
         '_distinct': '_distinct'
 
     }
+
+    # Default max return size for all processors
+    __maxReturnSize = 5000
+
     CONTENT_TYPE_JSON = 'application/json'
     CONTENT_TYPE_XML = 'application/xml'
     CONTENT_TYPE_TEXT = 'text/html'
@@ -291,6 +295,8 @@ class RESTEngine(object):
     def registerProcessor(self, entityName, processor):
         processor.setEngine(self)
         processor.bindEntityName(entityName)
+        if processor.getMaxReturnSize() is None:
+            processor.setMaxReturnSize(self.__maxReturnSize)
         self.__restApps[entityName] = processor
 
     def getProcessor(self, entityName):
@@ -605,6 +611,7 @@ class RESTProcessor(object):
     __engine = None
     __baseDjangoModel = None
     __bindEntityName = None
+    __maxReturnSize = None
 
     def __init__(self, baseDjangoModel):
         self.__baseDjangoModel = baseDjangoModel
@@ -620,6 +627,12 @@ class RESTProcessor(object):
 
     def getBindEntityName(self):
         return self.__bindEntityName
+
+    def setMaxReturnSize(self, maxSize):
+        self.__maxReturnSize = maxSize
+
+    def getMaxReturnSize(self):
+        return self.__maxReturnSize
 
     def __getSelfKey(self, keys):
         key = keys.get(self.__bindEntityName, None)
@@ -713,16 +726,15 @@ class RESTProcessor(object):
                 raise ValidationErrorException("Field %s is not nullable" % f)
 
     def customizedQueryParser(self, request, params):
-        query = params.get('query', None)
-        return query
+        pass
 
     def handle_http_request(self, request, params, keys, entityInfo):
         result = None
         queryType = entityInfo.get('queryType', None)
         if request.method == 'GET':
+            self.customizedQueryParser(request, params)
             expandArray = params.get('expand', [])
-            # query = params.get('query', None)
-            query = self.customizedQueryParser(request, params)
+            query = params.get('query', None)
             entityName = entityInfo.get('entityName', None)
             self.__validateExpandItem(entityName, expandArray)
             if queryType == 'single':
@@ -869,20 +881,32 @@ class RESTProcessor(object):
             columnNames = distinctColumns.split(',')
             djangoresult = djangoresult.values(*tuple(columnNames)).distinct()
         if kwargs.get('count', False):
-            return djangoresult.count()
+            resultCount = djangoresult.count()
+            return resultCount
         page = kwargs.get('page', None)
         pnum = kwargs.get('pnum', None)
+        # Default pages
         maxPages = 1
-        pagingresult = djangoresult
-        if page:
-            paginator = Paginator(djangoresult, pnum)
-            try:
-                pagingresult = paginator.page(page)
-            except PageNotAnInteger:
-                pagingresult = paginator.page(1)
-            except EmptyPage:
-                pagingresult = paginator.page(paginator.num_pages)
-            maxPages = paginator.num_pages
+        # Max result 5000
+        if self.__maxReturnSize:
+            pagingresult = djangoresult[:self.__maxReturnSize]
+        if page is not None and pnum is not None:
+            resultCount = pagingresult.count()
+            p = int(page)
+            n = int(pnum)
+            maxPages = math.ceil(resultCount / n)
+            sIdx = (p - 1) * n
+            eIdx = sIdx + n
+            pagingresult = pagingresult[sIdx:eIdx]
+        # if page:
+        #     paginator = Paginator(djangoresult, pnum)
+        #     try:
+        #         pagingresult = paginator.page(page)
+        #     except PageNotAnInteger:
+        #         pagingresult = paginator.page(1)
+        #     except EmptyPage:
+        #         pagingresult = paginator.page(paginator.num_pages)
+        #     maxPages = paginator.num_pages
         if distinctColumns:
             # Wrapper result by distinct column names
             finalresult = []
