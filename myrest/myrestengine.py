@@ -347,7 +347,7 @@ class RESTEngine(object):
 
     @staticmethod
     def getUserContext(request):
-        userContextData = request.session.get('userContext', None)
+        userContextData = request.session.get('myRestContext', None)
         if userContextData:
             return pickle.loads(userContextData)
         else:
@@ -356,7 +356,7 @@ class RESTEngine(object):
     @staticmethod
     def setUserContext(request, userContext):
         userContextData = pickle.dumps(userContext)
-        request.session['userContext'] = userContextData
+        request.session['myRestContext'] = userContextData
 
     def __checkAndGenerateCsrfToken(self, request, header):
         csrfToken = request.META.get('HTTP_CSRF_TOKEN', None)
