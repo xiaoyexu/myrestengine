@@ -1,0 +1,9 @@
+setup.py
+src/myrest/__init__.py
+src/myrest/myparser.py
+src/myrest/myrestengine.py
+src/myrest.egg-info/PKG-INFO
+src/myrest.egg-info/SOURCES.txt
+src/myrest.egg-info/dependency_links.txt
+src/myrest.egg-info/requires.txt
+src/myrest.egg-info/top_level.txt

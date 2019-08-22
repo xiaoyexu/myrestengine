@@ -105,18 +105,18 @@ class Parser(object):
                 (1, ',')
             ],
             'operator': [
-                (1, '='),   # equal
+                (1, '='),  # equal
                 (2, '!='),  # not equal
-                (1, '@'),   # between
+                (1, '@'),  # between
                 (2, '!@'),  # not between
-                (1, '%'),   # contains(not case sensitive)
+                (1, '%'),  # contains(not case sensitive)
                 (2, '!%'),  # not contains(not case sensitive)
                 (2, '%%'),  # contains(case sensitive)
-                (3, '!%%'), # not contains(case sensitive)
-                (1, '>'),   # great than
-                (1, '<'),   # less than
+                (3, '!%%'),  # not contains(case sensitive)
+                (1, '>'),  # great than
+                (1, '<'),  # less than
                 (2, '>='),  # great equal than
-                (2, '<=')   # less equal than
+                (2, '<=')  # less equal than
             ]
         }
         self.string_definition = {

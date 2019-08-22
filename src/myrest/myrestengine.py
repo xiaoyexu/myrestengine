@@ -5,8 +5,6 @@ from xml.etree.ElementTree import Element, tostring, fromstring
 from django.utils import timezone
 from django.db.models import Q
 from django.db.models.query import QuerySet
-from django.core.exceptions import *
-from django.core.paginator import Paginator, PageNotAnInteger, EmptyPage
 from functools import reduce
 import random, re, pickle, yaml, base64, json, time, datetime, math
 
@@ -28,6 +26,10 @@ class BadRequestException(Exception):
 
 
 class NotImplementedException(Exception):
+    pass
+
+
+class ObjectNotFoundException(Exception):
     pass
 
 
@@ -728,6 +730,22 @@ class RESTProcessor(object):
     def customizedQueryParser(self, request, params):
         pass
 
+    def __createEntity(self, request, json, entityInfo):
+        self.__validateEntity(json, entityInfo)
+        self.postValidation(json)
+        try:
+            model = self.getNewModel()
+            if model:
+                self.convertModel(json, model, 'CREATE')
+                model.save()
+                result = self.convertData(model, None)
+            else:
+                result = self.post(request)
+            return result
+        except Exception as e:
+            raise CreateErrorException('Create error: %s' % str(e))
+            # result = self.post(request)
+
     def handle_http_request(self, request, params, keys, entityInfo):
         result = None
         queryType = entityInfo.get('queryType', None)
@@ -753,7 +771,11 @@ class RESTProcessor(object):
                         params['q'] = q
                     except Exception as e:
                         raise ParameterErrorException('Error when parsing query url: %s' % str(e))
-                result = self.getList(request, keys, **params)
+                listResult = self.getList(request, keys, **params)
+                if type(listResult) is tuple:
+                    (result, listParams) = listResult
+                else:
+                    (result, listParams) = listResult, {}
                 if type(result) is list and expandArray:
                     for resultRecord in list(result):
                         expandKeys = self.__engine.getKeysFromRecord(entityName, resultRecord)
@@ -762,24 +784,22 @@ class RESTProcessor(object):
                                                                                                   expandItem)
                             resultRecord[expandItem] = self.__expandItemProcess(request, expandItem, expandItemSet,
                                                                                 expandKeys)
+                result = self.customizedListResponse(result, **listParams)
         elif request.method == 'HEAD':
             result = self.head(request)
         elif request.method == 'POST':
             if not self.__engine.getMetadataUtil().isEntityCreatable(self.getBindEntityName()):
                 raise CreateErrorException('Create error: Not creatable')
-            self.__validateEntity(request.jsonBody, entityInfo)
-            self.postValidation(request.jsonBody)
-            try:
-                model = self.getNewModel()
-                if model:
-                    self.convertModel(request.jsonBody, model, 'CREATE')
-                    model.save()
-                    result = self.convertData(model, None)
-                else:
-                    result = self.post(request)
-            except Exception as e:
-                raise CreateErrorException('Create error: %s' % str(e))
-                # result = self.post(request)
+            jsonBody = request.jsonBody
+            if type(jsonBody) == list:
+                result = []
+                for json in jsonBody:
+                    singleResult = self.__createEntity(request, json, entityInfo)
+                    result.append(singleResult)
+            elif type(jsonBody) == dict:
+                result = self.__createEntity(request, jsonBody, entityInfo)
+            else:
+                raise CreateErrorException('Create error: Wrong json type')
         elif request.method == 'PUT':
             if not self.__engine.getMetadataUtil().isEntityUpdatable(self.getBindEntityName()):
                 raise UpdateErrorException('Update error: Not updatable')
@@ -907,6 +927,9 @@ class RESTProcessor(object):
         #     except EmptyPage:
         #         pagingresult = paginator.page(paginator.num_pages)
         #     maxPages = paginator.num_pages
+        listParams = {
+            'maxPages': maxPages
+        }
         if distinctColumns:
             # Wrapper result by distinct column names
             finalresult = []
@@ -922,7 +945,7 @@ class RESTProcessor(object):
             for r in pagingresult:
                 record = self.convertData(r, None)
                 finalresult.append(record)
-            return self.customizedListResponse(finalresult, **{"maxPages": maxPages})
+            return (finalresult, listParams)
 
     def getSingle(self, request, keys):
         djangoModel = self.__getDjangoModel()
@@ -1135,7 +1158,7 @@ def requireProcess(need_login=True, need_decrypt=True):
                 return view_func(*args, **kwargs)
             except BadRequestException as e:
                 return errorResponse(400, str(e))
-            except ObjectDoesNotExist as e:
+            except ObjectNotFoundException as e:  # ObjectDoesNotExist
                 return errorResponse(404, str(e))
             except NotImplementedException as e:
                 return errorResponse(501, str(e))
