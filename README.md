@@ -1,4 +1,3 @@
 # My Rest Engine
-The project is based on django framework, check [Django project](http://www.djangoproject.com) for details
 
-
+Please refer to [Readme](https://github.com/xiaoyexu/myrestengine/blob/master/README-EN.md) or [中文文档](https://github.com/xiaoyexu/myrestengine/blob/master/README-CN.md)
