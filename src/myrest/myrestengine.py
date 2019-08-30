@@ -5,10 +5,12 @@ from xml.etree.ElementTree import Element, tostring, fromstring
 from django.utils import timezone
 from django.db.models import Q
 from django.db.models.query import QuerySet
+from django.core.exceptions import *
+from django.conf import settings
 from functools import reduce
 import random, re, pickle, yaml, base64, json, time, datetime, math
 
-VERSION = '20190809'
+VERSION = '20190830'
 
 
 class UserContext(object):
@@ -26,10 +28,6 @@ class BadRequestException(Exception):
 
 
 class NotImplementedException(Exception):
-    pass
-
-
-class ObjectNotFoundException(Exception):
     pass
 
 
@@ -918,15 +916,6 @@ class RESTProcessor(object):
             sIdx = (p - 1) * n
             eIdx = sIdx + n
             pagingresult = pagingresult[sIdx:eIdx]
-        # if page:
-        #     paginator = Paginator(djangoresult, pnum)
-        #     try:
-        #         pagingresult = paginator.page(page)
-        #     except PageNotAnInteger:
-        #         pagingresult = paginator.page(1)
-        #     except EmptyPage:
-        #         pagingresult = paginator.page(paginator.num_pages)
-        #     maxPages = paginator.num_pages
         listParams = {
             'maxPages': maxPages
         }
@@ -1158,7 +1147,7 @@ def requireProcess(need_login=True, need_decrypt=True):
                 return view_func(*args, **kwargs)
             except BadRequestException as e:
                 return errorResponse(400, str(e))
-            except ObjectNotFoundException as e:  # ObjectDoesNotExist
+            except ObjectDoesNotExist as e:
                 return errorResponse(404, str(e))
             except NotImplementedException as e:
                 return errorResponse(501, str(e))
@@ -1170,5 +1159,20 @@ def requireProcess(need_login=True, need_decrypt=True):
                 return errorResponse(500, str(e))
 
         return check
+
+    return decorate
+
+
+ENGINE = RESTEngine()
+
+try:
+    ENGINE.loadMetadataFromList(settings.MYREST_API_METADATA)
+except Exception as e:
+    raise InternalException('[init views] myrest loadmetadata failed: %s' % str(e))
+
+
+def register(name, model):
+    def decorate(processorClass):
+        ENGINE.registerProcessor(name, processorClass(model))
 
     return decorate
