@@ -279,6 +279,8 @@ class RESTEngine(object):
 
     # Default max return size for all processors
     __maxReturnSize = 5000
+    # Default validate csrf token
+    __valCSRFToken = True
 
     CONTENT_TYPE_JSON = 'application/json'
     CONTENT_TYPE_XML = 'application/xml'
@@ -291,6 +293,9 @@ class RESTEngine(object):
 
     def setParameterName(self, params):
         self.__parameterNames.update(params)
+
+    def setValCSRFToken(self, valToken):
+        self.__valCSRFToken = valToken
 
     def registerProcessor(self, entityName, processor):
         processor.setEngine(self)
@@ -584,8 +589,9 @@ class RESTEngine(object):
             http_response_status = 200
         else:
             # For POST PUT DELETE
-            if not self.__validateCsrfToken(request):
-                raise NoAuthException('csrf token error')
+            if self.__valCSRFToken:
+                if not self.__validateCsrfToken(request):
+                    raise NoAuthException('csrf token error')
             result = self.__process(request, pathArray, None)
             if method == 'POST':
                 http_response_status = 201
@@ -703,8 +709,8 @@ class RESTProcessor(object):
                     custCall = True
             elif type(mfield) is dict:
                 value = mfield.get('value', None)
-            if type(value) is datetime.datetime:
-                value = self.__formatDateTime(value)
+            # if type(value) is datetime.datetime:
+            #     value = self.__formatDateTime(value)
             if value is not None:
                 if custCall:
                     exec("djangoModel.%s=value" % mfield)
