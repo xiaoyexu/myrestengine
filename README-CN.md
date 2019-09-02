@@ -33,7 +33,7 @@ book:
     type: string
 ```
 
-在django的settings文件中设置变量
+在django的settings文件中设置变量，多个路径则只会加载第一个
 
 ```
 MYREST_API_METADATA = ['<path to api_metadata.yaml>']
@@ -46,7 +46,7 @@ MYREST_API_METADATA = ['<path to api_metadata.yaml>']
 ```
 class BookProcessor(RESTProcessor):
     def getBaseQuery(self):
-        return Q()
+        return Q(deleted=False)
 
     def getPopulateFieldMapping(self):
         return [
