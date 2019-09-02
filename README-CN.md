@@ -1,7 +1,133 @@
 # 一个 RESTFUL 包装类
 基于[Django项目](http://www.djangoproject.com) 的一个RESTFUL功能模块，是学习OData后的一个练习
 
-***开发基本完成***
+
+## 在Django项目中使用
+
+* 下载源文件，引入源文件包myrest（或为其他名字）
+
+```
+from .myrest import myparser, myrestengine
+```
+
+或使用 `pip install myrest`
+
+```
+from myrest import myrestengine
+```
+
+
+在需要的views.py中
+
+* 实现一个处理器类，如Book处理器
+
+```
+class BookProcessor(RESTProcessor):
+    def getBaseQuery(self):
+        return Q()
+
+    def getPopulateFieldMapping(self):
+        return [
+            'id',
+            'name',
+            'createdAt'
+        ]
+```
+
+* 使用 `register` 加注，如
+
+```
+@myrestengine.register('book', Book)
+class BookProcessor(RESTProcessor):
+   ...
+```
+
+* 默认引擎为myrestengine.ENGINE，可设置log对象和返回response的通用header，如
+
+```
+# logger is django object like, i.e. logger = logging.getLogger('default')
+restEngine.setLogger(logger)
+restEngine.setResponseHeader({
+    'Access-Control-Allow-Origin': '*',
+    'Access-Control-Allow-Headers': 'Content-Type, Accept, csrf-token',
+    'Access-Control-Allow-Methods': 'GET,PUT,DELETE,POST,HEAD,OPTIONS',
+    'Cache-Control': 'no-cache',
+    'Access-Control-Expose-Headers': 'csrf-token'
+})
+```
+
+* 增加一个处理所有restful api的入口，如urls.py中
+
+```
+url(r'^api/(?P<path>.*)$', views.api, name='api'),
+```
+
+和views.py中
+```
+@csrf_exempt
+def api(request, path):
+    return restEngine.handle(request, path)
+```
+
+定义的 api_metadata.yaml 文件如
+
+```
+sets:
+  books: book
+book:
+  key:
+  - name: id
+    type: int
+  property:
+  - name: name
+    type: string
+  - name: createdAt
+    type: string
+```
+
+views.py 如
+
+```
+from django.shortcuts import render
+from django.http import HttpResponse
+from django.views.decorators.csrf import csrf_exempt
+from .models import *
+from .myrestengine import *
+import logging
+
+log = logging.getLogger('default')
+log.info('logger initialized')
+
+
+class BookProcessor(RESTProcessor):
+    def getBaseQuery(self):
+        return Q()
+
+    def getPopulateFieldMapping(self):
+        return [
+            'id',
+            'name',
+            'createdAt'
+        ]
+
+
+book = BookProcessor(Book)
+
+restEngine = RESTEngine()
+restEngine.registerProcessor('book', book)
+try:
+    f = open('./book/api_metadata.yaml')
+    restEngine.loadMetadata(f)
+except Exception as e:
+    f = open('../book/api_metadata.yaml')
+    restEngine.loadMetadata(f)
+
+
+@csrf_exempt
+def api(request, path):
+    return restEngine.handle(request, path)
+
+```
 
 ## 元数据（Metadata）
 * 实体（Entity） - 代表一行数据，通常对应数据表的一行
@@ -379,122 +505,4 @@ def customizedListResponse(self, data, **kwargs):
 ```
 
 
-## 在Django项目中使用
 
-在需要的views.py中
-
-* 实现一个处理器类，如Book处理器
-
-```
-class BookProcessor(RESTProcessor):
-    def getBaseQuery(self):
-        return Q()
-
-    def getPopulateFieldMapping(self):
-        return [
-            'id',
-            'name',
-            'createdAt'
-        ]
-```
-
-* 创建一个该处理器的实例，参数Book为model，即models.py中的Book类
-
-```
-book = BookProcessor(Book)
-```
-
-* 将处理器注册到引擎上，对外起名为book
-
-```
-restEngine.registerProcessor('book', book)
-f = open('<path to>api_metadata.yaml')
-restEngine.loadMetadata(f)
-```
-
-* 可以给引擎设置log对象和返回response的通用header，如
-
-```
-# logger is django object like, i.e. logger = logging.getLogger('default')
-restEngine.setLogger(logger)
-restEngine.setResponseHeader({
-    'Access-Control-Allow-Origin': '*',
-    'Access-Control-Allow-Headers': 'Content-Type, Accept, csrf-token',
-    'Access-Control-Allow-Methods': 'GET,PUT,DELETE,POST,HEAD,OPTIONS',
-    'Cache-Control': 'no-cache',
-    'Access-Control-Expose-Headers': 'csrf-token'
-})
-```
-
-* 增加一个处理所有restful api的入口，如urls.py中
-
-```
-url(r'^api/(?P<path>.*)$', views.api, name='api'),
-```
-
-和views.py中
-```
-@csrf_exempt
-def api(request, path):
-    return restEngine.handle(request, path)
-```
-
-定义的 api_metadata.yaml 文件如
-
-```
-sets:
-  books: book
-book:
-  key:
-  - name: id
-    type: int
-  property:
-  - name: name
-    type: string
-  - name: createdAt
-    type: string
-```
-
-views.py 如
-
-```
-from django.shortcuts import render
-from django.http import HttpResponse
-from django.views.decorators.csrf import csrf_exempt
-from .models import *
-from .myrestengine import *
-import logging
-
-log = logging.getLogger('default')
-log.info('logger initialized')
-
-
-class BookProcessor(RESTProcessor):
-    def getBaseQuery(self):
-        return Q()
-
-    def getPopulateFieldMapping(self):
-        return [
-            'id',
-            'name',
-            'createdAt'
-        ]
-
-
-book = BookProcessor(Book)
-
-restEngine = RESTEngine()
-restEngine.registerProcessor('book', book)
-try:
-    f = open('./book/api_metadata.yaml')
-    restEngine.loadMetadata(f)
-except Exception as e:
-    f = open('../book/api_metadata.yaml')
-    restEngine.loadMetadata(f)
-
-
-@csrf_exempt
-def api(request, path):
-    return restEngine.handle(request, path)
-
-```

@@ -10,7 +10,7 @@ from django.conf import settings
 from functools import reduce
 import random, re, pickle, yaml, base64, json, time, datetime, math
 
-VERSION = '20190830'
+VERSION = '20190902'
 
 
 class UserContext(object):
@@ -1110,10 +1110,9 @@ class RESTProcessor(object):
         return result
 
 
-def requireProcess(need_login=True, need_decrypt=True):
+def requireProcess(fLogin=None, fDecrypt=None):
     def decorate(view_func):
         def errorResponse(status, message):
-            # log.error('%s %s' % (message, traceback.extract_stack(limit=5)))
             content = {'error': message}
             response = HttpResponse(status=status, content=json.dumps(content))
             response['Content-Type'] = 'application/json'
@@ -1126,11 +1125,16 @@ def requireProcess(need_login=True, need_decrypt=True):
                 response['Access-Control-Allow-Origin'] = '*'
                 response['Access-Control-Allow-Headers'] = 'Content-Type'
                 return response
+            if fLogin and callable(fLogin):
+                res = fLogin(request)
+                if isinstance(res, HttpResponse):
+                    return res
+                if type(res) is bool and not res:
+                    return errorResponse(403, 'Invalid login')
             requestContentTypes = request.META.get('CONTENT_TYPE', RESTEngine.DEFAULT_CONTENT_TYPE).split(',')
             body = request.body
-            if need_decrypt:
-                pass
-                # body = decrypt(body, True)
+            if fDecrypt and callable(fDecrypt):
+                body = fDecrypt(body)
             if body:
                 if 'application/json' in requestContentTypes:
                     if type(body) is bytes:
@@ -1142,13 +1146,6 @@ def requireProcess(need_login=True, need_decrypt=True):
                 elif 'application/xml' in requestContentTypes:
                     body = XmlConvert.xml_to_dict(request.body)
             request.jsonBody = body
-            if need_login:
-                pass
-                # userId = body.get('userId', None)
-                # if not userId:
-                #     return errorResponse(403, 'Invalid login')
-                # if User.objects.filter(userId=userId).count() == 0:
-                #     return errorResponse(403, 'Invalid user')
             try:
                 return view_func(*args, **kwargs)
             except BadRequestException as e:
