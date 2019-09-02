@@ -263,7 +263,13 @@ class XmlConvert(object):
 
 class RESTEngine(object):
     __restApps = {}
+    __responseHeader = {
+        'Access-Control-Allow-Origin': '*',
+        'Access-Control-Allow-Headers': 'Content-Type'
+    }
     __metadataUtil = None
+    __logger = None
+    __dbLogger = None
     # Default parameter names
     __parameterNames = {
         '_query': '_query',
@@ -290,6 +296,31 @@ class RESTEngine(object):
 
     def __init__(self):
         pass
+
+    def setLogger(self, logger):
+        self.__logger = logger
+
+    def setDBLogger(self, dbLogger):
+        self.__dbLogger = dbLogger
+
+    def dbLogger(self, request, response, **kwargs):
+        if self.__dbLogger:
+            self.__dbLogger(request, response, **kwargs)
+
+    def logInfo(self, logstr):
+        if self.__logger:
+            self.__logger.info(logstr)
+
+    def logError(self, logstr):
+        if self.__logger:
+            self.__logger.error(logstr)
+
+    def setResponseHeader(self, headers):
+        self.__responseHeader.update(headers)
+
+    def manipulateResponseHeader(self, response):
+        for k, v in self.__responseHeader.items():
+            response[k] = v
 
     def setParameterName(self, params):
         self.__parameterNames.update(params)
@@ -376,15 +407,18 @@ class RESTEngine(object):
             userContext.csrfTokenInfo = {'token': token, 'expire': expire}
             header['csrf-token'] = token
             self.setUserContext(request, userContext)
+            self.logInfo('Token generated and set to session context')
 
     def __validateCsrfToken(self, request):
         csrfToken = request.META.get('HTTP_CSRF_TOKEN', None)
         userContext = self.getUserContext(request)
         csrfTokenInfo = userContext.csrfTokenInfo
         if not csrfToken or not csrfTokenInfo:
+            self.logError("No csrf-token in session or request")
             return False
         if time.time() <= csrfTokenInfo['expire'] and csrfToken == csrfTokenInfo['token']:
             return True
+        self.logError("csrf-token is expired")
         return False
 
     def __validatePath(self, pathArray):
@@ -589,9 +623,8 @@ class RESTEngine(object):
             http_response_status = 200
         else:
             # For POST PUT DELETE
-            if self.__valCSRFToken:
-                if not self.__validateCsrfToken(request):
-                    raise NoAuthException('csrf token error')
+            if self.__valCSRFToken and not self.__validateCsrfToken(request):
+                raise NoAuthException('csrf token error')
             result = self.__process(request, pathArray, None)
             if method == 'POST':
                 http_response_status = 201
@@ -601,8 +634,9 @@ class RESTEngine(object):
         response.status_code = http_response_status
         for k, v in http_response_header.items():
             response[k] = v
-        response['Access-Control-Allow-Origin'] = '*'
-        response['Access-Control-Allow-Headers'] = 'Content-Type'
+        # response['Access-Control-Allow-Origin'] = '*'
+        # response['Access-Control-Allow-Headers'] = 'Content-Type'
+        self.manipulateResponseHeader(response)
         return response
 
     def handle(self, request, path):

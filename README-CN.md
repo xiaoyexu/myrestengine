@@ -17,9 +17,31 @@ from myrest import myrestengine
 ```
 
 
-在需要的views.py中
+* 在app目录下定义的 api_metadata.yaml 文件如
 
-* 实现一个处理器类，如Book处理器
+```
+sets:
+  books: book
+book:
+  key:
+  - name: id
+    type: int
+  property:
+  - name: name
+    type: string
+  - name: createdAt
+    type: string
+```
+
+在django的settings文件中设置变量
+
+```
+MYREST_API_METADATA = ['<path to api_metadata.yaml>']
+```
+
+
+
+* 在需要的views.py中 实现一个处理器类，如Book处理器
 
 ```
 class BookProcessor(RESTProcessor):
@@ -46,8 +68,8 @@ class BookProcessor(RESTProcessor):
 
 ```
 # logger is django object like, i.e. logger = logging.getLogger('default')
-restEngine.setLogger(logger)
-restEngine.setResponseHeader({
+myrestengine.ENGINE.setLogger(logger)
+myrestengine.ENGINE.setResponseHeader({
     'Access-Control-Allow-Origin': '*',
     'Access-Control-Allow-Headers': 'Content-Type, Accept, csrf-token',
     'Access-Control-Allow-Methods': 'GET,PUT,DELETE,POST,HEAD,OPTIONS',
@@ -65,69 +87,11 @@ url(r'^api/(?P<path>.*)$', views.api, name='api'),
 和views.py中
 ```
 @csrf_exempt
+@myrestengine.requireProcess()
 def api(request, path):
-    return restEngine.handle(request, path)
+    return myrestengine.ENGINE.handle(request, path)
 ```
 
-定义的 api_metadata.yaml 文件如
-
-```
-sets:
-  books: book
-book:
-  key:
-  - name: id
-    type: int
-  property:
-  - name: name
-    type: string
-  - name: createdAt
-    type: string
-```
-
-views.py 如
-
-```
-from django.shortcuts import render
-from django.http import HttpResponse
-from django.views.decorators.csrf import csrf_exempt
-from .models import *
-from .myrestengine import *
-import logging
-
-log = logging.getLogger('default')
-log.info('logger initialized')
-
-
-class BookProcessor(RESTProcessor):
-    def getBaseQuery(self):
-        return Q()
-
-    def getPopulateFieldMapping(self):
-        return [
-            'id',
-            'name',
-            'createdAt'
-        ]
-
-
-book = BookProcessor(Book)
-
-restEngine = RESTEngine()
-restEngine.registerProcessor('book', book)
-try:
-    f = open('./book/api_metadata.yaml')
-    restEngine.loadMetadata(f)
-except Exception as e:
-    f = open('../book/api_metadata.yaml')
-    restEngine.loadMetadata(f)
-
-
-@csrf_exempt
-def api(request, path):
-    return restEngine.handle(request, path)
-
-```
 
 ## 元数据（Metadata）
 * 实体（Entity） - 代表一行数据，通常对应数据表的一行

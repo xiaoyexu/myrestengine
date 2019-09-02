@@ -1,67 +1,22 @@
 # My Rest Engine
 The project is based on django framework, check [Django project](http://www.djangoproject.com) for details
 
-## Usage in django project
+## Usage in Django project
 
-In the view where you want to define an api entry
-* Define processor class for a entity
-
-```
-class BookProcessor(RESTProcessor):
-    def getBaseQuery(self):
-        return Q()
-
-    def getPopulateFieldMapping(self):
-        return [
-            'id',
-            'name',
-            'createdAt'
-        ]
-```
-
-* Create processor instance, Book is the django model class defined in your models.py
+* Download source .py file and imported as below
 
 ```
-book = BookProcessor(Book)
+from .myrest import myparser, myrestengine
 ```
 
-* Use restEngine singleton instance instead of creating one
+Or use `pip install myrest` to install
 
 ```
-restEngine.registerProcessor('book', book)
-f = open('<path to>api_metadata.yaml')
-restEngine.loadMetadata(f)
+from myrest import myrestengine
 ```
 
-* Set logger or response headers if needed, for example
 
-```
-# logger is django object like, i.e. logger = logging.getLogger('default')
-restEngine.setLogger(logger)
-restEngine.setResponseHeader({
-    'Access-Control-Allow-Origin': '*',
-    'Access-Control-Allow-Headers': 'Content-Type, Accept, csrf-token',
-    'Access-Control-Allow-Methods': 'GET,PUT,DELETE,POST,HEAD,OPTIONS',
-    'Cache-Control': 'no-cache',
-    'Access-Control-Expose-Headers': 'csrf-token'
-})
-```
-
-* Add entry point in urls.py
-```
-url(r'^api/(?P<path>.*)$', views.api, name='api'),
-```
-
-and in views.py
-
-```
-@csrf_exempt
-@requireProcess(need_login=False)
-def api(request, path):
-    return restEngine.handle(request, path)
-```
-
-Demo api_metadata.yaml file
+* Create api_metadata.yaml under app folder
 
 ```
 sets:
@@ -77,20 +32,17 @@ book:
     type: string
 ```
 
-Demo view file
+Add `MYREST_API_METADATA` in settings.py
 
 ```
-from django.shortcuts import render
-from django.http import HttpResponse
-from django.views.decorators.csrf import csrf_exempt
-from .models import *
-from .myrestengine import *
-import logging
-
-log = logging.getLogger('default')
-log.info('logger initialized')
+MYREST_API_METADATA = ['<path to api_metadata.yaml>']
+```
 
 
+
+* Create a entity processor in views.py
+
+```
 class BookProcessor(RESTProcessor):
     def getBaseQuery(self):
         return Q()
@@ -101,26 +53,44 @@ class BookProcessor(RESTProcessor):
             'name',
             'createdAt'
         ]
+```
 
-
-book = BookProcessor(Book)
-
-restEngine = RESTEngine()
-restEngine.registerProcessor('book', book)
-try:
-    f = open('./book/api_metadata.yaml')
-    restEngine.loadMetadata(f)
-except Exception as e:
-    f = open('../book/api_metadata.yaml')
-    restEngine.loadMetadata(f)
-
-
-@csrf_exempt
-@requireProcess(need_login=False)
-def api(request, path):
-    return restEngine.handle(request, path)
+* Use `register` annotation tag
 
 ```
+@myrestengine.register('book', Book)
+class BookProcessor(RESTProcessor):
+   ...
+```
+
+* By default there is a singleton myrestengine.ENGINE，to set logger object or general response header
+
+```
+# logger is django object like, i.e. logger = logging.getLogger('default')
+myrestengine.ENGINE.setLogger(logger)
+myrestengine.ENGINE.setResponseHeader({
+    'Access-Control-Allow-Origin': '*',
+    'Access-Control-Allow-Headers': 'Content-Type, Accept, csrf-token',
+    'Access-Control-Allow-Methods': 'GET,PUT,DELETE,POST,HEAD,OPTIONS',
+    'Cache-Control': 'no-cache',
+    'Access-Control-Expose-Headers': 'csrf-token'
+})
+```
+
+* Added an entry in urls.py
+
+```
+url(r'^api/(?P<path>.*)$', views.api, name='api'),
+```
+
+and in views.py
+```
+@csrf_exempt
+@myrestengine.requireProcess()
+def api(request, path):
+    return myrestengine.ENGINE.handle(request, path)
+```
+
 
 ## Metadata
 When new entity added, update api_metadata.yaml file, especially the navigation changes.
