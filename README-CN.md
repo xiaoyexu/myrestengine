@@ -334,7 +334,7 @@ def getListByKey(self, keys, expandName=None):
 \_pnum | entity?\_pnum=10 | 设置每页大小，默认为25
 \_count | entity?\_count | 只返回记录数
 \_distinct | entity?\_distinct=name,age | 返回指定列的distinct记录，多列用逗号分隔
-
+\_columns | entity?\_columns=name | 只返回指定列
 
 可重定义参数名，使用 `setParameterName`
 
@@ -344,6 +344,7 @@ restEngine.setParameterName({
     "_query": "q",
     "_fastquery": "fq",
     "_expand": "exp",
+    "_columns": "cols",
     "_order": "o",
     "_page": "page",
     "_pnum": "size",

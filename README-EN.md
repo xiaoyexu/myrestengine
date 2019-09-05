@@ -326,6 +326,7 @@ Function | Example | Comment
 \_pnum | entity?\_pnum=10 | Set 10 record for each page, default is 25
 \_count | entity?\_count | Only return count number
 \_distinct | entity?\_distinct=name,age | Return distinct column values by given column name, delimited by comma 
+\_columns | entity?\_columns=name | Only return given columns
 
 You may re-define the parameter name by `setParameterName`
 
@@ -335,6 +336,7 @@ restEngine.setParameterName({
     "_query": "q",
     "_fastquery": "fq",
     "_expand": "exp",
+    "_columns": "cols",
     "_order": "o",
     "_page": "page",
     "_pnum": "size",

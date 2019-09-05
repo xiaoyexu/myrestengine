@@ -10,7 +10,7 @@ from django.conf import settings
 from functools import reduce
 import random, re, pickle, yaml, base64, json, time, datetime, math
 
-VERSION = '20190902'
+VERSION = '0.1.3'
 
 
 class UserContext(object):
@@ -279,8 +279,8 @@ class RESTEngine(object):
         '_fastquery': '_fastquery',
         '_page': '_page',
         '_pnum': '_pnum',
-        '_distinct': '_distinct'
-
+        '_distinct': '_distinct',
+        '_columns': '_columns'
     }
 
     # Default max return size for all processors
@@ -310,6 +310,10 @@ class RESTEngine(object):
     def logInfo(self, logstr):
         if self.__logger:
             self.__logger.info(logstr)
+
+    def logDebug(self, logstr):
+        if self.__logger:
+            self.__logger.debug(logstr)
 
     def logError(self, logstr):
         if self.__logger:
@@ -407,18 +411,18 @@ class RESTEngine(object):
             userContext.csrfTokenInfo = {'token': token, 'expire': expire}
             header['csrf-token'] = token
             self.setUserContext(request, userContext)
-            self.logInfo('Token generated and set to session context')
+            self.logDebug('Token generated and set to session context')
 
     def __validateCsrfToken(self, request):
         csrfToken = request.META.get('HTTP_CSRF_TOKEN', None)
         userContext = self.getUserContext(request)
         csrfTokenInfo = userContext.csrfTokenInfo
         if not csrfToken or not csrfTokenInfo:
-            self.logError("No csrf-token in session or request")
+            self.logDebug("No csrf-token in session or request")
             return False
         if time.time() <= csrfTokenInfo['expire'] and csrfToken == csrfTokenInfo['token']:
             return True
-        self.logError("csrf-token is expired")
+        self.logDebug("csrf-token is expired")
         return False
 
     def __validatePath(self, pathArray):
@@ -495,6 +499,8 @@ class RESTEngine(object):
         expandArray = [x.strip() for x in expand.split(',')] if expand else []
         order = request.GET.get(self.__parameterNames['_order'], None)
         orderArray = [x.strip() for x in order.split(',')] if order else []
+        columns = request.GET.get(self.__parameterNames['_columns'], None)
+        columnsArray = [x.strip() for x in columns.split(',')] if columns else []
         count = request.GET.get(self.__parameterNames['_count'], None)
         count = True if count == '' else False
         params = {
@@ -502,6 +508,7 @@ class RESTEngine(object):
             'fastquery': request.GET.get(self.__parameterNames['_fastquery'], None),
             'expand': expandArray,
             'order': orderArray,
+            'columns': columnsArray,
             'page': request.GET.get(self.__parameterNames['_page'], None),
             'pnum': request.GET.get(self.__parameterNames['_pnum'], None),
             'distinct': request.GET.get(self.__parameterNames['_distinct'], None),
@@ -598,7 +605,6 @@ class RESTEngine(object):
             self.setUserContext(request, userContext)
         # Split request entities
         pathArray = path.split('/')
-        # log.info('Request path: %s' % pathArray)
         # Default http status
         http_response_status = 404
         # Response header
@@ -634,8 +640,6 @@ class RESTEngine(object):
         response.status_code = http_response_status
         for k, v in http_response_header.items():
             response[k] = v
-        # response['Access-Control-Allow-Origin'] = '*'
-        # response['Access-Control-Allow-Headers'] = 'Content-Type'
         self.manipulateResponseHeader(response)
         return response
 
@@ -701,7 +705,8 @@ class RESTProcessor(object):
     def __formatDateTime(self, dt, format="%Y-%m-%d %H:%M:%S"):
         return str(timezone.localtime(dt).strftime(format))
 
-    def __populateToJson(self, jsonDict, djangoModel, fields):
+    def __populateToJson(self, jsonDict, djangoModel, fields, reqFields=None):
+        onlyReturnReqFeilds = reqFields is not None and len(reqFields) > 0
         for field in fields:
             if type(field) is tuple:
                 jfield, mfield = field[0], field[1]
@@ -715,8 +720,9 @@ class RESTProcessor(object):
                 value = eval('djangoModel.%s' % mfield)
             if type(value) is datetime.datetime:
                 value = self.__formatDateTime(value)
-            if value:
-                jsonDict[jfield] = value
+            if onlyReturnReqFeilds and jfield not in reqFields:
+                continue
+            jsonDict[jfield] = value
         return jsonDict
 
     def __populateToModel(self, jsonDict, djangoModel, fields, usage):
@@ -743,8 +749,6 @@ class RESTProcessor(object):
                     custCall = True
             elif type(mfield) is dict:
                 value = mfield.get('value', None)
-            # if type(value) is datetime.datetime:
-            #     value = self.__formatDateTime(value)
             if value is not None:
                 if custCall:
                     exec("djangoModel.%s=value" % mfield)
@@ -782,7 +786,6 @@ class RESTProcessor(object):
             return result
         except Exception as e:
             raise CreateErrorException('Create error: %s' % str(e))
-            # result = self.post(request)
 
     def handle_http_request(self, request, params, keys, entityInfo):
         result = None
@@ -855,7 +858,6 @@ class RESTProcessor(object):
                     result = self.put(request, keys)
             except Exception as e:
                 raise UpdateErrorException('Update error: %s' % str(e))
-            # result = self.put(request, keys)
         elif request.method == 'DELETE':
             if not keys:
                 raise ParameterErrorException('Missing key')
@@ -870,8 +872,6 @@ class RESTProcessor(object):
                     else:
                         model.delete()
                     result = {}
-                # else:
-                #     result = self.delete(request, keys)
             except Exception as e:
                 raise DeleteErrorException('Delete error: %s' % str(e))
         else:
@@ -943,6 +943,7 @@ class RESTProcessor(object):
             return resultCount
         page = kwargs.get('page', None)
         pnum = kwargs.get('pnum', None)
+        reqFields = kwargs.get('columns', None)
         # Default pages
         maxPages = 1
         # Max result 5000
@@ -956,7 +957,7 @@ class RESTProcessor(object):
             sIdx = (p - 1) * n
             eIdx = sIdx + n
             pagingresult = pagingresult[sIdx:eIdx]
-        listParams = {
+        additionParams = {
             'maxPages': maxPages
         }
         if distinctColumns:
@@ -972,9 +973,9 @@ class RESTProcessor(object):
             # Normal result wrapping
             finalresult = []
             for r in pagingresult:
-                record = self.convertData(r, None)
+                record = self.convertData(r, language=None, reqFields=reqFields)
                 finalresult.append(record)
-            return (finalresult, listParams)
+            return (finalresult, additionParams)
 
     def getSingle(self, request, keys):
         djangoModel = self.__getDjangoModel()
@@ -1044,11 +1045,11 @@ class RESTProcessor(object):
         """
         return None
 
-    def convertData(self, model, language=None):
+    def convertData(self, model, language=None, reqFields=None):
         mapping = self.getPopulateFieldMapping()
         if mapping:
             record = {}
-            self.__populateToJson(record, model, mapping)
+            self.__populateToJson(record, model, mapping, reqFields)
             return record
         return {}
 
@@ -1205,7 +1206,7 @@ ENGINE = RESTEngine()
 try:
     ENGINE.loadMetadataFromList(settings.MYREST_API_METADATA)
 except Exception as e:
-    raise InternalException('[init views] myrest loadmetadata failed: %s' % str(e))
+    raise InternalException('[myrestengine] loadmetadata failed: %s' % str(e))
 
 
 def register(name, model):
