@@ -10,7 +10,7 @@ from django.conf import settings
 from functools import reduce
 import random, re, pickle, yaml, base64, json, time, datetime, math
 
-VERSION = '0.1.3'
+VERSION = '0.1.4'
 
 
 class UserContext(object):
@@ -267,6 +267,7 @@ class RESTEngine(object):
         'Access-Control-Allow-Origin': '*',
         'Access-Control-Allow-Headers': 'Content-Type'
     }
+    __metaFiles = None
     __metadataUtil = None
     __logger = None
     __dbLogger = None
@@ -357,6 +358,14 @@ class RESTEngine(object):
             return processor
         return self.getProcessorByEntitySetName(urlName)
 
+    def setMetafiles(self, filespath):
+        self.__metaFiles = filespath
+
+    def getMetafiles(self):
+        if self.__metaFiles is None:
+            raise InternalException('No metadata file path given')
+        return self.__metaFiles
+
     def loadMetadata(self, yamlFile):
         if not yamlFile:
             raise InternalException('No metadata file')
@@ -370,7 +379,27 @@ class RESTEngine(object):
             except Exception as e:
                 raise InternalException('Failed to load yaml meta file: %s' % str(e))
 
+    def start(self, metaFiles=None):
+        try:
+            if metaFiles is None:
+                if hasattr(settings, 'MYREST_API_METADATA'):
+                    metaFiles = settings.MYREST_API_METADATA
+                    ENGINE.loadMetadataFromList(metaFiles)
+                    self.logDebug(
+                        '[RESTEngine][start] started with MYREST_API_METADATA in settings')
+                else:
+                    self.logDebug(
+                        '[RESTEngine][start] No metafile path given and no MYREST_API_METADATA found in settings')
+            else:
+                ENGINE.loadMetadataFromList(metaFiles)
+                self.logDebug(
+                    '[RESTEngine][start] started with given paths %s' % metaFiles)
+        except Exception as e:
+            raise InternalException('[myrestengine] loadmetadata failed: %s' % str(e))
+
     def getMetadataUtil(self):
+        if self.__metadataUtil is None:
+            raise InternalException('[myrestengine] metadata is None, check load filepath')
         return self.__metadataUtil
 
     def getKeysFromRecord(self, entityName, resultRecord):
@@ -1203,10 +1232,7 @@ def requireProcess(fLogin=None, fDecrypt=None):
 
 ENGINE = RESTEngine()
 
-try:
-    ENGINE.loadMetadataFromList(settings.MYREST_API_METADATA)
-except Exception as e:
-    raise InternalException('[myrestengine] loadmetadata failed: %s' % str(e))
+ENGINE.start()
 
 
 def register(name, model):
