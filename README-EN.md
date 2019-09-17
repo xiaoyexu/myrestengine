@@ -38,7 +38,11 @@ Add `MYREST_API_METADATA` in settings.py
 MYREST_API_METADATA = ['<path to api_metadata.yaml>']
 ```
 
+By default, based on `settings.MYREST_API_METADATA`, an ENGINE instance will be created, i.e. `myrestengine.ENGINE`, to use different engines in different django apps, try in views.py
 
+```
+myrestengine.ENGINE.start(['./app2/api_metadata.yaml', '../app2/api_metadata.yaml'])
+```
 
 * Create a entity processor in views.py
 

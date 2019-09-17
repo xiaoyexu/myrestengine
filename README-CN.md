@@ -39,6 +39,11 @@ book:
 MYREST_API_METADATA = ['<path to api_metadata.yaml>']
 ```
 
+默认即根据 `settings.MYREST_API_METADATA` 启动一个ENGINE实例，即 `myrestengine.ENGINE`，如果在多个django app中使用，则可以按app启动，在views.py使用
+
+```
+myrestengine.ENGINE.start(['./app2/api_metadata.yaml', '../app2/api_metadata.yaml'])
+```
 
 
 * 在需要的views.py中 实现一个处理器类，如Book处理器
