@@ -357,6 +357,13 @@ name='abc'
 age='20'
 ```
 
+None is special used for NULL value
+
+```
+name=None
+age!=None
+```
+
 The filter string should be assigned to ``_query``
 
 * , for and

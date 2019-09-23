@@ -366,6 +366,13 @@ name='abc'
 age='20'
 ```
 
+仅 None 可作特殊处理
+
+```
+name=None
+age!=None
+```
+
 整个过滤表达式放在 ``_query`` 中
 
 * 逗号(,)分隔表示 and，如

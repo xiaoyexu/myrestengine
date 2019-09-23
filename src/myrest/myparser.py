@@ -218,6 +218,10 @@ class Parser(object):
                     value = node[1]
                     status[-1] = 'E'
                     self.textStack.pop()
+                elif node[0] == 'variable' and node[1] == 'None':
+                    value = None
+                    status[-1] = 'E'
+                    self.textStack.pop()
                 else:
                     self.raiseError('Parse error, should be value', node)
         status.pop()
@@ -316,6 +320,6 @@ class Parser(object):
             right = self.toDict(r)
             return {'opt': n, 'left': left, 'right': right}
         else:
-            # Remove padding ' "
-            r = r[1:-1]
+            # Remove padding ' ", but allow special value None
+            r = r[1:-1] if r else None
             return {'opt': n, 'field': l, 'value': r}
