@@ -10,7 +10,7 @@ from django.conf import settings
 from functools import reduce
 import random, re, pickle, yaml, base64, json, time, datetime, math
 
-VERSION = '0.1.4'
+VERSION = '0.1.5'
 
 
 class UserContext(object):
@@ -1125,8 +1125,6 @@ class RESTProcessor(object):
             return q2
 
     def buildQobject(self, fieldname, opt, low, high=None):
-        if not low:
-            return
         q = Q()
         ao = Q.AND
         conKey = fieldname
