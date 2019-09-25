@@ -10,7 +10,7 @@ from django.conf import settings
 from functools import reduce
 import random, re, pickle, yaml, base64, json, time, datetime, math
 
-VERSION = '0.1.5'
+VERSION = '0.1.6'
 
 
 class UserContext(object):
@@ -810,11 +810,29 @@ class RESTProcessor(object):
                 self.convertModel(json, model, 'CREATE')
                 model.save()
                 result = self.convertData(model, None)
+
             else:
                 result = self.post(request)
+            self.afterPost(model)
             return result
         except Exception as e:
             raise CreateErrorException('Create error: %s' % str(e))
+
+    def __updateEntity(self, request, keys, json, entityInfo):
+        self.__validateEntity(request.jsonBody, entityInfo)
+        self.putValidation(request.jsonBody)
+        try:
+            model = self.getPutModel(keys)
+            if model:
+                self.convertModel(request.jsonBody, model, 'UPDATE')
+                model.save()
+                result = {}
+            else:
+                result = self.put(request, keys)
+            self.afterPut(model)
+            return result
+        except Exception as e:
+            raise UpdateErrorException('Update error: %s' % str(e))
 
     def handle_http_request(self, request, params, keys, entityInfo):
         result = None
@@ -841,11 +859,7 @@ class RESTProcessor(object):
                         params['q'] = q
                     except Exception as e:
                         raise ParameterErrorException('Error when parsing query url: %s' % str(e))
-                listResult = self.getList(request, keys, **params)
-                if type(listResult) is tuple:
-                    (result, listParams) = listResult
-                else:
-                    (result, listParams) = listResult, {}
+                result, listParams = self.getList(request, keys, **params)
                 if type(result) is list and expandArray:
                     for resultRecord in list(result):
                         expandKeys = self.__engine.getKeysFromRecord(entityName, resultRecord)
@@ -875,18 +889,11 @@ class RESTProcessor(object):
                 raise UpdateErrorException('Update error: Not updatable')
             if not keys:
                 raise ParameterErrorException('Missing key')
-            self.__validateEntity(request.jsonBody, entityInfo)
-            self.putValidation(request.jsonBody)
-            try:
-                model = self.getPutModel(keys)
-                if model:
-                    self.convertModel(request.jsonBody, model, 'UPDATE')
-                    model.save()
-                    return {}
-                else:
-                    result = self.put(request, keys)
-            except Exception as e:
-                raise UpdateErrorException('Update error: %s' % str(e))
+            jsonBody = request.jsonBody
+            if type(jsonBody) == dict:
+                result = self.__updateEntity(request, keys, jsonBody, entityInfo)
+            else:
+                raise UpdateErrorException('Update error: Wrong json type')
         elif request.method == 'DELETE':
             if not keys:
                 raise ParameterErrorException('Missing key')
@@ -901,6 +908,7 @@ class RESTProcessor(object):
                     else:
                         model.delete()
                     result = {}
+                self.afterDelete(model)
             except Exception as e:
                 raise DeleteErrorException('Delete error: %s' % str(e))
         else:
@@ -997,14 +1005,19 @@ class RESTProcessor(object):
                 for n in columnNames:
                     j[n] = r[n]
                 finalresult.append(j)
-            return finalresult
+            fr = (finalresult, {})
         else:
             # Normal result wrapping
             finalresult = []
             for r in pagingresult:
                 record = self.convertData(r, language=None, reqFields=reqFields)
                 finalresult.append(record)
-            return (finalresult, additionParams)
+            fr = (finalresult, additionParams)
+        self.afterGetList(pagingresult)
+        return fr
+
+    def afterGetList(self, models):
+        pass
 
     def getSingle(self, request, keys):
         djangoModel = self.__getDjangoModel()
@@ -1021,7 +1034,11 @@ class RESTProcessor(object):
             q.add(baseQ, Q.AND)
         model = djangoModel.objects.get(q)
         record = self.convertData(model, None)
+        self.afterGetSingle(model)
         return record
+
+    def afterGetSingle(self, model):
+        pass
 
     def getModelByKey(self, keys):
         keySets = keys.get(self.__bindEntityName, None)
@@ -1045,11 +1062,17 @@ class RESTProcessor(object):
     def post(self, request):
         raise NotImplementedException("Not Implemented")
 
+    def afterPost(self, model):
+        pass
+
     def putValidation(self, json):
         pass
 
     def put(self, request, keys):
         raise NotImplementedException("Not Implemented")
+
+    def afterPut(self, model):
+        pass
 
     def getPutModel(self, keys):
         return self.getModelByKey(keys)
@@ -1062,6 +1085,9 @@ class RESTProcessor(object):
 
     def delete(self, request, keys):
         raise NotImplementedException("Not Implemented")
+
+    def afterDelete(self, model):
+        pass
 
     def getPopulateFieldMapping(self):
         """

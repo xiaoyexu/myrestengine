@@ -1,11 +1,11 @@
 from setuptools import setup, find_packages
 
-with open("README.md", "r") as fh:
+with open("README.md", "r", encoding='utf-8') as fh:
     long_description = fh.read()
 
 setup(
     name="myrest",
-    version="0.1.5",
+    version="0.1.6",
     author="Xiaoye Xu",
     author_email="xiaoye.xu@outlook.com",
     description="A RESTful wrapper for django project",

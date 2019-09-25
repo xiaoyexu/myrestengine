@@ -2,11 +2,15 @@
 
 Please refer to [Readme](https://github.com/xiaoyexu/myrestengine/blob/master/README-EN.md) or [中文文档](https://github.com/xiaoyexu/myrestengine/blob/master/README-CN.md)
 
+## Latest Release 0.1.6
+
+- Added `afterGetList` `afterGetSingle`  `afterPost` `afterPut` `afterDelete` methods in Processor
+
 ## Release 0.1.5
 
 - Allow None in _query expression, e.g. ?_query=name=None
 
-## Latest Release 0.1.4
+## Release 0.1.4
 
 - Addded start method on engine object
 
