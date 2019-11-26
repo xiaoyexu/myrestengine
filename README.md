@@ -2,7 +2,11 @@
 
 Please refer to [Readme](https://github.com/xiaoyexu/myrestengine/blob/master/README-EN.md) or [中文文档](https://github.com/xiaoyexu/myrestengine/blob/master/README-CN.md)
 
-## Latest Release 0.1.6
+## Latest Release 0.1.7
+
+- Bug fix for count and distinct usage
+
+## Release 0.1.6
 
 - Added `afterGetList` `afterGetSingle`  `afterPost` `afterPut` `afterDelete` methods in Processor
 

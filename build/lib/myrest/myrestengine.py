@@ -10,7 +10,7 @@ from django.conf import settings
 from functools import reduce
 import random, re, pickle, yaml, base64, json, time, datetime, math
 
-VERSION = '0.1.6'
+VERSION = '0.1.7'
 
 
 class UserContext(object):
@@ -977,7 +977,7 @@ class RESTProcessor(object):
             djangoresult = djangoresult.values(*tuple(columnNames)).distinct()
         if kwargs.get('count', False):
             resultCount = djangoresult.count()
-            return resultCount
+            return (resultCount, {})
         page = kwargs.get('page', None)
         pnum = kwargs.get('pnum', None)
         reqFields = kwargs.get('columns', None)
@@ -1003,7 +1003,7 @@ class RESTProcessor(object):
             for r in pagingresult:
                 j = {}
                 for n in columnNames:
-                    j[n] = r[n]
+                    j[n] = "%s" % r[n]
                 finalresult.append(j)
             fr = (finalresult, {})
         else:
