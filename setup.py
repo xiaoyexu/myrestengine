@@ -5,7 +5,7 @@ with open("README.md", "r", encoding='utf-8') as fh:
 
 setup(
     name="myrest",
-    version="0.1.7",
+    version="0.1.8",
     author="Xiaoye Xu",
     author_email="xiaoye.xu@outlook.com",
     description="A RESTful wrapper for django project",

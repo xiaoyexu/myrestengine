@@ -10,7 +10,7 @@ from django.conf import settings
 from functools import reduce
 import random, re, pickle, yaml, base64, json, time, datetime, math
 
-VERSION = '0.1.7'
+VERSION = '0.1.8'
 
 
 class UserContext(object):
@@ -288,6 +288,8 @@ class RESTEngine(object):
     __maxReturnSize = 5000
     # Default validate csrf token
     __valCSRFToken = True
+    # Empty json result return blank string
+    __blankForEmptyJsonResult = False
 
     CONTENT_TYPE_JSON = 'application/json'
     CONTENT_TYPE_XML = 'application/xml'
@@ -332,6 +334,12 @@ class RESTEngine(object):
 
     def setValCSRFToken(self, valToken):
         self.__valCSRFToken = valToken
+
+    def setBlankForEmptyJsonResult(self, blank):
+        self.__blankForEmptyJsonResult = blank
+
+    def getBlankForEmptyJsonResult(self):
+        return self.__blankForEmptyJsonResult
 
     def registerProcessor(self, entityName, processor):
         processor.setEngine(self)
@@ -506,7 +514,10 @@ class RESTEngine(object):
     def __convertResponse(self, result, content_types):
         response = HttpResponse()
         if self.DEFAULT_CONTENT_TYPE in content_types or self.CONTENT_TYPE_TEXT in content_types or self.CONTENT_TYPE_ANY in content_types:
-            response.content = json.dumps(result) if result else ''
+            if self.__blankForEmptyJsonResult:
+                response.content = json.dumps(result) if result else ''
+            else:
+                response.content = json.dumps(result)
             response['Content-Type'] = self.DEFAULT_CONTENT_TYPE
         elif self.CONTENT_TYPE_XML in content_types:
             response.content = tostring(XmlConvert.json_to_xml('xml', result)) if result else ''
@@ -808,9 +819,8 @@ class RESTProcessor(object):
             model = self.getNewModel()
             if model:
                 self.convertModel(json, model, 'CREATE')
-                model.save()
+                self.savePost(model)
                 result = self.convertData(model, None)
-
             else:
                 result = self.post(request)
             self.afterPost(model)
@@ -825,7 +835,7 @@ class RESTProcessor(object):
             model = self.getPutModel(keys)
             if model:
                 self.convertModel(request.jsonBody, model, 'UPDATE')
-                model.save()
+                self.saveUpdate(model)
                 result = {}
             else:
                 result = self.put(request, keys)
@@ -1061,6 +1071,12 @@ class RESTProcessor(object):
 
     def post(self, request):
         raise NotImplementedException("Not Implemented")
+
+    def savePost(self, model):
+        model.save()
+
+    def saveUpdate(self, model):
+        model.save()
 
     def afterPost(self, model):
         pass

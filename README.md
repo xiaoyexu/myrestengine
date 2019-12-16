@@ -2,7 +2,11 @@
 
 Please refer to [Readme](https://github.com/xiaoyexu/myrestengine/blob/master/README-EN.md) or [中文文档](https://github.com/xiaoyexu/myrestengine/blob/master/README-CN.md)
 
-## Latest Release 0.1.7
+## Latest Release 0.1.8
+
+- Added savePost saveUpdate for sub processor overriding
+
+## Release 0.1.7
 
 - Bug fix for count and distinct usage
 
