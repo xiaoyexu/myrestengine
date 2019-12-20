@@ -5,12 +5,13 @@ from xml.etree.ElementTree import Element, tostring, fromstring
 from django.utils import timezone
 from django.db.models import Q
 from django.db.models.query import QuerySet
+from django.db import transaction
 from django.core.exceptions import *
 from django.conf import settings
 from functools import reduce
 import random, re, pickle, yaml, base64, json, time, datetime, math
 
-VERSION = '0.1.8'
+VERSION = '0.1.9'
 
 
 class UserContext(object):
@@ -832,17 +833,50 @@ class RESTProcessor(object):
         self.__validateEntity(request.jsonBody, entityInfo)
         self.putValidation(request.jsonBody)
         try:
-            model = self.getPutModel(keys)
-            if model:
-                self.convertModel(request.jsonBody, model, 'UPDATE')
-                self.saveUpdate(model)
-                result = {}
-            else:
-                result = self.put(request, keys)
-            self.afterPut(model)
-            return result
+            with transaction.atomic():
+                keySets = keys.get(self.__bindEntityName, None)
+                if not keySets:
+                    raise Exception("no keys")
+                q = Q()
+                for k, v in keySets.items():
+                    q.add(self.buildQobject(k, '=', v), Q.AND)
+                djangoModel = self.__getDjangoModel()
+                dm = djangoModel.objects.select_for_update().filter(q)
+                model = dm[0]
+                if model:
+                    self.convertModel(request.jsonBody, model, 'UPDATE')
+                    self.saveUpdate(model)
+                    result = {}
+                else:
+                    result = self.put(request, keys)
+                self.afterPut(model)
+                return result
         except Exception as e:
             raise UpdateErrorException('Update error: %s' % str(e))
+
+    def __deleteEntity(self, request, keys):
+        try:
+            with transaction.atomic():
+                keySets = keys.get(self.__bindEntityName, None)
+                if not keySets:
+                    raise Exception("no keys")
+                q = Q()
+                for k, v in keySets.items():
+                    q.add(self.buildQobject(k, '=', v), Q.AND)
+                djangoModel = self.__getDjangoModel()
+                dm = djangoModel.objects.select_for_update().filter(q)
+                model = dm[0]
+                if model:
+                    if hasattr(model, 'deleted'):
+                        model.deleted = True
+                        model.save()
+                    else:
+                        model.delete()
+                    result = {}
+                self.afterDelete(model)
+                return result
+        except Exception as e:
+            raise DeleteErrorException('Delete error: %s' % str(e))
 
     def handle_http_request(self, request, params, keys, entityInfo):
         result = None
@@ -909,18 +943,7 @@ class RESTProcessor(object):
                 raise ParameterErrorException('Missing key')
             if not self.__engine.getMetadataUtil().isEntityDeletable(self.getBindEntityName()):
                 raise DeleteErrorException('Delete error: Not deletable')
-            try:
-                model = self.getDeleteModel(keys)
-                if model:
-                    if hasattr(model, 'deleted'):
-                        model.deleted = True
-                        model.save()
-                    else:
-                        model.delete()
-                    result = {}
-                self.afterDelete(model)
-            except Exception as e:
-                raise DeleteErrorException('Delete error: %s' % str(e))
+            result = self.__deleteEntity(request, keys)
         else:
             raise NotImplementedException('')
         return self.postProcessResult(result, queryType, request.method)
