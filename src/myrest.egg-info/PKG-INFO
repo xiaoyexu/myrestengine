@@ -1,6 +1,6 @@
 Metadata-Version: 1.1
 Name: myrest
-Version: 0.1.9
+Version: 0.1.10
 Summary: A RESTful wrapper for django project
 Home-page: https://github.com/xiaoyexu/myrestengine
 Author: Xiaoye Xu
@@ -9,6 +9,10 @@ License: UNKNOWN
 Description: # My Rest Engine
         
         Please refer to [Readme](https://github.com/xiaoyexu/myrestengine/blob/master/README-EN.md) or [中文文档](https://github.com/xiaoyexu/myrestengine/blob/master/README-CN.md)
+        
+        ## Latest Release 0.1.10
+        
+        - added parameter reference 
         
         ## Latest Release 0.1.9
         

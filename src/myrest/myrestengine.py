@@ -554,7 +554,8 @@ class RESTEngine(object):
             'pnum': request.GET.get(self.__parameterNames['_pnum'], None),
             'distinct': request.GET.get(self.__parameterNames['_distinct'], None),
             'count': count,
-            'method': request.method
+            'method': request.method,
+            "reference": request.GET.get(self.__parameterNames['_reference'], None),
         }
         return params
 
@@ -1014,6 +1015,8 @@ class RESTProcessor(object):
         page = kwargs.get('page', None)
         pnum = kwargs.get('pnum', None)
         reqFields = kwargs.get('columns', None)
+        forReference = kwargs.get('reference', None)
+        forReference = forReference is not None
         # Default pages
         maxPages = 1
         # Max result 5000
@@ -1043,7 +1046,7 @@ class RESTProcessor(object):
             # Normal result wrapping
             finalresult = []
             for r in pagingresult:
-                record = self.convertData(r, language=None, reqFields=reqFields)
+                record = self.convertData(r, language=None, reqFields=reqFields, forReference=forReference)
                 finalresult.append(record)
             fr = (finalresult, additionParams)
         self.afterGetList(pagingresult)
@@ -1139,8 +1142,14 @@ class RESTProcessor(object):
         """
         return None
 
-    def convertData(self, model, language=None, reqFields=None):
-        mapping = self.getPopulateFieldMapping()
+    def getPopulateFieldReferenceMapping(self):
+        return None
+
+    def convertData(self, model, language=None, reqFields=None, forReference=False):
+        if forReference:
+            mapping = self.getPopulateFieldReferenceMapping()
+        else:
+            mapping = self.getPopulateFieldMapping()
         if mapping:
             record = {}
             self.__populateToJson(record, model, mapping, reqFields)
